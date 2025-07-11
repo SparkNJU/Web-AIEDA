@@ -1,0 +1,162 @@
+<template>
+  <header class="header">
+    <div class="logo">
+      <router-link to="/">
+        <h1>AIEDA平台</h1>
+      </router-link>
+    </div>
+    <nav class="nav">
+      <ul>
+        <li><router-link to="/">首页</router-link></li>
+        <li><router-link to="/about">关于我们</router-link></li>
+        <li><router-link to="/services">服务</router-link></li>
+        <li><router-link to="/contact">联系我们</router-link></li>
+      </ul>
+    </nav>
+    <div class="auth-buttons">
+      <template v-if="!isLoggedIn">
+        <router-link to="/login">
+          <button class="login-btn">登录</button>
+        </router-link>
+        <router-link to="/register">
+          <button class="register-btn">注册</button>
+        </router-link>
+      </template>
+      <template v-else>
+        <router-link to="/profile">
+          <button class="profile-btn">
+            <span class="username">{{ username }}</span>
+          </button>
+        </router-link>
+        <button class="logout-btn" @click="handleLogout">退出登录</button>
+      </template>
+    </div>
+  </header>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
+
+const router = useRouter();
+const route = useRoute();
+
+// 登录状态和用户信息
+const isLoggedIn = ref(false);
+const username = ref('');
+
+// 检查登录状态
+const checkLoginStatus = () => {
+  const token = sessionStorage.getItem('token');
+  const storedUsername = sessionStorage.getItem('username');
+  
+  isLoggedIn.value = !!token;
+  username.value = storedUsername || '';
+};
+
+// 退出登录
+const handleLogout = () => {
+  if (confirm('确定要退出登录吗？')) {
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('username');
+    sessionStorage.removeItem('role');
+    sessionStorage.removeItem('userId');
+    
+    isLoggedIn.value = false;
+    username.value = '';
+    
+    router.push('/');
+  }
+};
+
+// 组件挂载时检查登录状态
+onMounted(() => {
+  checkLoginStatus();
+});
+
+// 监听路由变化，更新登录状态
+watch(
+  () => route.path,
+  () => {
+    checkLoginStatus();
+  }
+);
+</script>
+
+<style scoped>
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.logo h1 {
+  margin: 0;
+  color: rgb(102, 8, 116);
+  font-size: 1.5rem;
+}
+
+.logo a {
+  text-decoration: none;
+}
+
+.nav ul {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav li {
+  margin: 0 1rem;
+}
+
+.nav a {
+  text-decoration: none;
+  color: #333;
+  font-weight: 500;
+}
+
+.nav a:hover, .nav a.router-link-active {
+  color: rgb(102, 8, 116);
+}
+
+.auth-buttons {
+  display: flex;
+}
+
+.auth-buttons button {
+  padding: 0.5rem 1rem;
+  margin-left: 0.5rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.login-btn, .profile-btn {
+  background-color: transparent;
+  color: rgb(102, 8, 116);
+  border: 1px solid rgb(102, 8, 116);
+}
+
+.register-btn {
+  background-color: rgb(102, 8, 116);
+  color: white;
+}
+
+.logout-btn {
+  background-color: #f56c6c;
+  color: white;
+}
+
+.auth-buttons a {
+  text-decoration: none;
+}
+
+.username {
+  font-weight: 500;
+}
+</style>
