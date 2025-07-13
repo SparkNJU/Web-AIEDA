@@ -1,5 +1,5 @@
 import { axios } from '../utils/request'
-import { USER_MODULE } from './_prefix'
+import { USER_MODULE } from './_prefix.ts'
 
 type LoginInfo = {
     phone: string,
