@@ -8,7 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 
 @Slf4j
@@ -43,7 +43,7 @@ public class AccountController {
     @PostMapping()
     public Response<String> createUser(@RequestBody Account account) {
         String result = accountService.createUser(account);
-        if (result == "注册成功"){
+        if (result.equals("注册成功")){
             return Response.buildSuccess(result);
         }
 

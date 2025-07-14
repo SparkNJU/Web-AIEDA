@@ -1,30 +1,30 @@
 package org.example.aiedabackend.vo;
 
 public class Response<T> {
-    private String status;
+    private String code;
     private String message;
     private T data;
 
-    public Response(String status, String message, T data) {
-        this.status = status;
+    public Response(String code, String message, T data) {
+        this.code = code;
         this.message = message;
         this.data = data;
     }
 
     public static <T> Response<T> buildSuccess(T data) {
-        return new Response<>("success", "操作成功", data);
+        return new Response<>("200", "操作成功", data);
     }
 
     public static <T> Response<T> buildFailure(String message, String status) {
         return new Response<>(status, message, null);
     }
 
-    public String getStatus() {
-        return status;
+    public String getCode() {
+        return code;
     }
 
-    public void setStatus(String status) {
-        this.status = status;
+    public void setCode(String code) {
+        this.code = code;
     }
 
     public String getMessage() {

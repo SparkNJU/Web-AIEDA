@@ -3,9 +3,11 @@ package org.example.aiedabackend.util;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.SecretKey;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,6 +22,14 @@ public class JwtUtil {
     @Value("${jwt.expiration:86400000}")
     private Long expiration; // 默认24小时
 
+    private SecretKey getSigningKey() {
+        // 注意：HS512 算法要求密钥长度至少 512 位（64 字节），否则会报错
+        // 若你的密钥较短，需先更新为长密钥（如随机生成 64 位字符串）
+        byte[] keyBytes = secret.getBytes();
+        return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+
     // 从token中获取用户ID
     public Integer getUserIdFromToken(String token) {
         try {
@@ -30,19 +40,13 @@ public class JwtUtil {
         }
     }
 
-    // 生成token
+
+    // 生成 token（更新签名方法）
     public String generateToken(Integer userId, String username) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
         claims.put("username", username);
         return doGenerateToken(claims);
-    }
-
-    private Claims getClaimsFromToken(String token) {
-        return Jwts.parser()
-                .setSigningKey(secret)
-                .parseClaimsJws(token)
-                .getBody();
     }
 
     private String doGenerateToken(Map<String, Object> claims) {
@@ -53,8 +57,17 @@ public class JwtUtil {
                 .setClaims(claims)
                 .setIssuedAt(createdDate)
                 .setExpiration(expirationDate)
-                .signWith(SignatureAlgorithm.HS512, secret)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS512)
                 .compact();
+    }
+
+    // 从 token 中获取 Claims（更新解析方法）
+    private Claims getClaimsFromToken(String token) {
+        return Jwts.parserBuilder() // 注意：新版本用 parserBuilder() 替代 parser()
+                .setSigningKey(getSigningKey()) // 设置签名密钥
+                .build() // 构建解析器
+                .parseClaimsJws(token)
+                .getBody();
     }
 
     public String extractUsername(String token) {
