@@ -1,49 +1,55 @@
 import axios from 'axios'
-//创建一个axios的实例service
-const service = axios.create(
-    {
-        //baseURL: SERVER_ADDR, 
-        //TODO : 设置后端地址（本地或服务器），会将请求转发到后端端口
-        baseURL: "http://localhost:8080",
-        timeout: 30000
-    }
-)
 
-//判断是否登录
-function hasToken() {
-    return !(sessionStorage.getItem('token') == '')
+const service = axios.create({
+    baseURL: "http://localhost:8080",
+    timeout: 30000
+})
+
+// 获取token
+function getToken() {
+    const token = sessionStorage.getItem('token')
+    return token && token !== '' ? token : null
 }
 
-//当前实例的拦截器，对所有要发送给后端的请求进行处理，在其中加入token
+// 请求拦截器：自动携带token
 service.interceptors.request.use(
     config => {
-        if(hasToken()) {
-            config.headers['token'] = sessionStorage.getItem('token')
+        const token = getToken()
+        if (token) {
+            if (!config.headers) config.headers = {}
+            config.headers['token'] = token
         }
         return config
     },
     error => {
-        console.log(error);
-        return Promise.reject();
+        console.error(error)
+        return Promise.reject(error)
     }
 )
 
-//当前实例的拦截器，对所有从后端收到的请求进行处理，检验http的状态码
+// 响应拦截器：统一处理后端code为200才算成功
 service.interceptors.response.use(
     response => {
-        if (response.status === 200) {
-            return response;
+        // 登录接口，自动存储token
+        if (response.config.url && response.config.url.includes('/login') && response.data.code === '200') {
+            // 登录成功，保存token
+            sessionStorage.setItem('token', response.data.data)
+        }
+        // 统一判断后端code
+        if (response.data && response.data.code === '200') {
+            return response
         } else {
-            return Promise.reject();
+            // 失败情况
+            return Promise.reject(response.data)
         }
     },
     error => {
-        console.log(error);
-        return Promise.reject();
+        console.error(error)
+        return Promise.reject(error)
     }
 )
 
-//设置为全局变量
 export {
-    service as axios
+    service as axios,
+    getToken
 }

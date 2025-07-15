@@ -1,87 +1,18 @@
-<template>
-  <div class="profile-container">
-    <div class="profile-content">
-      <div class="profile-header">
-        <h1>个人信息</h1>
-      </div>
-      
-      <div class="profile-card">
-        <div class="user-avatar">
-          <div class="avatar-circle">
-            {{ avatarText }}
-          </div>
-        </div>
-        
-        <div class="user-info">
-          <div class="info-item">
-            <label>用户名</label>
-            <div class="info-value">{{ userInfo.username }}</div>
-          </div>
-          
-          <div class="info-item">
-            <label>手机号</label>
-            <div class="info-value">{{ maskPhone(userInfo.phone) }}</div>
-          </div>
-          
-          <div class="info-item">
-            <label>角色</label>
-            <div class="info-value">{{ roleText }}</div>
-          </div>
-          
-          <div class="info-item">
-            <label>个人简介</label>
-            <div class="info-value description">{{ userInfo.description || '暂无简介' }}</div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="profile-actions">
-        <button class="edit-button" @click="showEditForm = true" v-if="!showEditForm">
-          编辑资料
-        </button>
-        
-        <!-- 编辑表单 -->
-        <div class="edit-form" v-if="showEditForm">
-          <h2>编辑个人信息</h2>
-          
-          <div class="form-item">
-            <label>用户名</label>
-            <input type="text" v-model="editForm.username" class="form-input" />
-          </div>
-          
-          <div class="form-item">
-            <label>个人简介</label>
-            <textarea v-model="editForm.description" class="form-input" rows="4"></textarea>
-          </div>
-          
-          <div class="form-item">
-            <label>新密码</label>
-            <input type="password" v-model="editForm.password" class="form-input" placeholder="留空表示不修改" />
-          </div>
-          
-          <div class="form-actions">
-            <button class="save-button" @click="updateProfile">保存</button>
-            <button class="cancel-button" @click="cancelEdit">取消</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { userInfo, userInfoUpdate } from '../../api/user';
+import * as userApi from '../../api/user';
+import { ROLE_MAP } from '../../constants/role';
 
 const router = useRouter();
 
 // 用户信息
 const userInfo = reactive({
+  uid: '',
   username: '',
   phone: '',
-  role: 0,
+  role: '',
   description: ''
 });
 
@@ -101,7 +32,7 @@ const avatarText = computed(() => {
 
 // 计算属性：角色文本
 const roleText = computed(() => {
-  return userInfo.role === 1 ? '管理员' : '普通用户';
+  return ROLE_MAP[userInfo.role] || '未知';
 });
 
 // 手机号码脱敏
@@ -119,10 +50,14 @@ const getUserInfo = async () => {
       router.push('/login');
       return;
     }
-    
-    const res = await userInfo();
-    if (res.data.code === '000') {
-      Object.assign(userInfo, res.data.result);
+    const res = await userApi.userInfo();
+    if (res.data.code === '200') {
+      const data = res.data.data;
+      userInfo.uid = data.uid;
+      userInfo.username = data.username;
+      userInfo.phone = data.phone;
+      userInfo.role = data.role;
+      userInfo.description = data.description;
       // 初始化编辑表单
       editForm.username = userInfo.username;
       editForm.description = userInfo.description || '';
@@ -145,27 +80,27 @@ const updateProfile = async () => {
       description?: string;
       password?: string;
     } = {};
-    
+
     if (editForm.username !== userInfo.username) {
       updateData.username = editForm.username;
     }
-    
+
     if (editForm.description !== userInfo.description) {
       updateData.description = editForm.description;
     }
-    
+
     if (editForm.password) {
       updateData.password = editForm.password;
     }
-    
+
     // 如果没有变更，直接返回
     if (Object.keys(updateData).length === 0) {
       showEditForm.value = false;
       return;
     }
-    
-    const res = await userInfoUpdate(updateData);
-    if (res.data.code === '000') {
+
+    const res = await userApi.userInfoUpdate(updateData);
+    if (res.data.code === '200') {
       ElMessage.success('个人信息更新成功');
       // 更新本地数据
       getUserInfo();
@@ -192,6 +127,76 @@ onMounted(() => {
   getUserInfo();
 });
 </script>
+
+<template>
+  <div class="profile-container">
+    <div class="profile-content">
+      <div class="profile-header">
+        <h1>个人信息</h1>
+      </div>
+      <div class="profile-card">
+        <div class="user-avatar">
+          <div class="avatar-circle">
+            {{ avatarText }}
+          </div>
+        </div>
+
+        <div class="user-info">
+          <div class="info-item">
+            <label>用户名</label>
+            <div class="info-value">{{ userInfo.username }}</div>
+          </div>
+
+          <div class="info-item">
+            <label>手机号</label>
+            <div class="info-value">{{ maskPhone(userInfo.phone) }}</div>
+          </div>
+
+          <div class="info-item">
+            <label>角色</label>
+            <div class="info-value">{{ roleText }}</div>
+          </div>
+
+          <div class="info-item">
+            <label>个人简介</label>
+            <div class="info-value description">{{ userInfo.description || '暂无简介' }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-actions">
+        <button class="edit-button" @click="showEditForm = true" v-if="!showEditForm">
+          编辑资料
+        </button>
+
+        <!-- 编辑表单 -->
+        <div class="edit-form" v-if="showEditForm">
+          <h2>编辑个人信息</h2>
+
+          <div class="form-item">
+            <label>用户名</label>
+            <input type="text" v-model="editForm.username" class="form-input" />
+          </div>
+
+          <div class="form-item">
+            <label>个人简介</label>
+            <textarea v-model="editForm.description" class="form-input" rows="4"></textarea>
+          </div>
+
+          <div class="form-item">
+            <label>新密码</label>
+            <input type="password" v-model="editForm.password" class="form-input" placeholder="留空表示不修改" />
+          </div>
+
+          <div class="form-actions">
+            <button class="save-button" @click="updateProfile">保存</button>
+            <button class="cancel-button" @click="cancelEdit">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
 
 <style scoped>
 .profile-container {
@@ -337,7 +342,8 @@ onMounted(() => {
   margin-top: 2rem;
 }
 
-.save-button, .cancel-button {
+.save-button,
+.cancel-button {
   padding: 0.75rem 1.5rem;
   border: none;
   border-radius: 4px;

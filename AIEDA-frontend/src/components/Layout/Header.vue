@@ -23,12 +23,10 @@
         </router-link>
       </template>
       <template v-else>
-        <router-link to="/profile">
-          <button class="profile-btn">
-            <span class="username">{{ username }}</span>
-          </button>
+        <router-link to="/Profile">
+          <button class="profile-btn">个人中心</button>
         </router-link>
-        <button class="logout-btn" @click="handleLogout">退出登录</button>
+        <button class="logout-btn" @click="handleLogout">登出</button>
       </template>
     </div>
   </header>
@@ -48,20 +46,13 @@ const username = ref('');
 // 检查登录状态
 const checkLoginStatus = () => {
   const token = sessionStorage.getItem('token');
-  const storedUsername = sessionStorage.getItem('username');
-  
   isLoggedIn.value = !!token;
-  username.value = storedUsername || '';
 };
 
 // 退出登录
 const handleLogout = () => {
   if (confirm('确定要退出登录吗？')) {
     sessionStorage.removeItem('token');
-    sessionStorage.removeItem('username');
-    sessionStorage.removeItem('role');
-    sessionStorage.removeItem('userId');
-    
     isLoggedIn.value = false;
     username.value = '';
     

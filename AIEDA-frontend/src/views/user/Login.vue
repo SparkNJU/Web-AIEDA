@@ -50,24 +50,19 @@ const handleLogin = async () => {
     phone: phone.value,
     password: password.value
   }).then(res => {
-    if (res.data.code === '000') {
+    if (res.data.code === '200') {
       ElMessage({
-        message: "登录成功！",
+        message: res.data.message,
         type: 'success',
         center: true,
       })
-      const token = res.data.result
+      const token = res.data.data
       sessionStorage.setItem('token', token)
-
-      userInfo().then(res => {
-        sessionStorage.setItem('username', res.data.result.username)
-        sessionStorage.setItem('role', res.data.result.role)
-        sessionStorage.setItem('userId', res.data.result.id)
-        router.push({ path: "/" })
-      })
+      sessionStorage.setItem('phone', phone.value)
+      router.push({ path: "/Profile" })
     } else if (res.data.code === '400') {
       ElMessage({
-        message: res.data.msg,
+        message: res.data.message,
         type: 'error',
         center: true,
       })

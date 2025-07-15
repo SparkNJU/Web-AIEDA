@@ -77,7 +77,7 @@ const handleRegister = async () => {
     phone: phone.value,
     password: password.value,
   }).then(res => {
-    if (res.data.code === '000') {
+    if (res.data.code === '200') {
       ElMessage({
         message: "注册成功！请登录",
         type: 'success',
