@@ -16,7 +16,7 @@ type RegisterInfo = {
 type UpdateInfo = {
     username?: string,
     password?: string,
-    description?: string, // 新增description字段，替代address
+    description?: string,
 }
 
 // 如果有“Vue: This may be converted to an async function”警告，可以不管

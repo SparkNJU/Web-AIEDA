@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import * as userApi from '../../api/user';
 import { ROLE_MAP } from '../../constants/role';
+import { captchaGenerator } from '../../utils/captcha';
 
 const router = useRouter();
 
@@ -20,10 +21,13 @@ const userInfo = reactive({
 const editForm = reactive({
   username: '',
   description: '',
-  password: ''
+  password: '',
+  confirmPassword: '',
+  captcha: '',
 });
 
 const showEditForm = ref(false);
+const captchaImage = ref('');
 
 // 计算属性：头像文本（用户名首字母）
 const avatarText = computed(() => {
@@ -71,34 +75,64 @@ const getUserInfo = async () => {
   }
 };
 
+// 校验逻辑
+const hasPasswordInput = computed(() => editForm.password !== '');
+const hasConfirmPasswordInput = computed(() => editForm.confirmPassword !== '');
+const hasCaptchaInput = computed(() => editForm.captcha !== '');
+const isConfirmPasswordValid = computed(() => editForm.password === editForm.confirmPassword && hasPasswordInput.value);
+
+// 获取验证码
+const getCaptcha = () => {
+  const { image } = captchaGenerator.generate();
+  captchaImage.value = image;
+};
+
 // 更新个人信息
 const updateProfile = async () => {
   try {
-    // 创建更新数据对象，只包含有变化的字段
+    // 校验验证码
+    if (!captchaGenerator.validate(editForm.captcha)) {
+      ElMessage({
+        message: '验证码错误',
+        type: 'error',
+        center: true,
+      });
+      getCaptcha();
+      editForm.captcha = '';
+      return;
+    }
+    // 校验新密码和确认密码
+    if (editForm.password && !isConfirmPasswordValid.value) {
+      ElMessage({
+        message: '两次输入的新密码不一致',
+        type: 'error',
+        center: true,
+      });
+      return;
+    }
+
+    // 创建更新数据对象，必定包括phone和有变化的字段
     const updateData: {
+      phone: string;
       username?: string;
       description?: string;
       password?: string;
     } = {};
-
+    updateData.phone = userInfo.phone; // 必须包含phone
     if (editForm.username !== userInfo.username) {
       updateData.username = editForm.username;
     }
-
     if (editForm.description !== userInfo.description) {
       updateData.description = editForm.description;
     }
-
     if (editForm.password) {
       updateData.password = editForm.password;
     }
-
     // 如果没有变更，直接返回
     if (Object.keys(updateData).length === 0) {
       showEditForm.value = false;
       return;
     }
-
     const res = await userApi.userInfoUpdate(updateData);
     if (res.data.code === '200') {
       ElMessage.success('个人信息更新成功');
@@ -119,11 +153,14 @@ const cancelEdit = () => {
   editForm.username = userInfo.username;
   editForm.description = userInfo.description || '';
   editForm.password = '';
+  editForm.confirmPassword = '';
+  editForm.captcha = '';
   showEditForm.value = false;
 };
 
 // 组件挂载时获取用户信息
 onMounted(() => {
+  getCaptcha();
   getUserInfo();
 });
 </script>
@@ -186,6 +223,20 @@ onMounted(() => {
           <div class="form-item">
             <label>新密码</label>
             <input type="password" v-model="editForm.password" class="form-input" placeholder="留空表示不修改" />
+          </div>
+          <div class="form-item">
+            <label>确认新密码</label>
+            <input type="password" v-model="editForm.confirmPassword" class="form-input" placeholder="请再次输入新密码" />
+            <span v-if="hasConfirmPasswordInput && !isConfirmPasswordValid" style="color:#f56c6c;font-size:12px;">两次输入的新密码不一致</span>
+          </div>
+          <div class="form-item">
+            <label>验证码</label>
+            <div class="verify-group">
+              <input v-model="editForm.captcha" class="form-input captcha-input" placeholder="请输入验证码" required />
+              <div class="captcha-image" @click="getCaptcha">
+                <img :src="captchaImage" alt="验证码" title="点击刷新" />
+              </div>
+            </div>
           </div>
 
           <div class="form-actions">
@@ -333,6 +384,16 @@ onMounted(() => {
 .form-input:focus {
   outline: none;
   border-color: rgb(102, 8, 116);
+}
+
+.verify-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.captcha-image {
+  cursor: pointer;
 }
 
 .form-actions {
