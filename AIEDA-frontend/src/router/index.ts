@@ -4,6 +4,7 @@ import Home from '../views/home/Home.vue'
 import Login from '../views/user/Login.vue'
 import Register from '../views/user/Register.vue'
 import Profile from '../views/user/Profile.vue'
+import Llm from '../views/llm/llm.vue'
 import { ElMessage } from 'element-plus'
 
 const router = createRouter({
@@ -40,6 +41,12 @@ const router = createRouter({
           name: 'Profile',
           component: Profile,
           meta: { title: '个人信息', requiresAuth: true }
+        },
+        {
+          path: 'llm',
+          name: 'Llm',
+          component: Llm,
+          meta: { title: 'IGBT网表生成器', requiresAuth: false }
         }
       ]
     },
