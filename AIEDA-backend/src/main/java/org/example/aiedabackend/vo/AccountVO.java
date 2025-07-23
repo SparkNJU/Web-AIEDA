@@ -1,5 +1,7 @@
 package org.example.aiedabackend.vo;
 
+import org.example.aiedabackend.po.Account;
+
 public class AccountVO {
 
     private String username;
@@ -51,5 +53,15 @@ public class AccountVO {
 
     public void setRole(Integer role) {
         this.role = role;
+    }
+
+    public Account toPO() {
+        Account account = new Account();
+        account.setUsername(this.username);
+        account.setPhone(this.phone);
+        account.setPassword(this.password);
+        account.setDescription(this.description);
+        account.setRole(this.role);
+        return account;
     }
 }

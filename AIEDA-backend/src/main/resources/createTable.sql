@@ -8,7 +8,7 @@ CREATE TABLE users (
     phone VARCHAR(15) NOT NULL UNIQUE,
     password VARCHAR(100) NOT NULL,
     description VARCHAR(500),
-    role INT NOT NULL DEFAULT 2
+    role INT NOT NULL DEFAULT 1
 );
 
 INSERT INTO users (username, phone, password, description, role) VALUES
