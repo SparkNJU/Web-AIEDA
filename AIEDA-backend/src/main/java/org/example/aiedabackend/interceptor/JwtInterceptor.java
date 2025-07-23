@@ -37,7 +37,7 @@ public class JwtInterceptor implements HandlerInterceptor {
             Integer userId = jwtUtil.getUserIdFromToken(token);
             request.setAttribute("username", username);
             request.setAttribute("userId", userId);
-            log.info("拦截器设置了用户ID: {} 用户名: {}", userId, username);
+            //log.info("拦截器设置了用户ID: {} 用户名: {}", userId, username);
             return true;
         }
 

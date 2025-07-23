@@ -63,7 +63,6 @@ const handleRegister = async () => {
     ElMessage({
       message: "验证码错误",
       type: 'error',
-      center: true,
     })
     getCaptcha()
     captcha.value = ''
@@ -81,14 +80,12 @@ const handleRegister = async () => {
       ElMessage({
         message: "注册成功！请登录",
         type: 'success',
-        center: true,
       })
       router.push({ path: "/login" })
     } else {
       ElMessage({
         message: res.data.msg || "注册失败，请重试",
         type: 'error',
-        center: true,
       })
       getCaptcha()
       captcha.value = ''
@@ -97,7 +94,6 @@ const handleRegister = async () => {
     ElMessage({
       message: "注册失败，请稍后重试",
       type: 'error',
-      center: true,
     })
     console.error("注册错误:", error)
     getCaptcha()

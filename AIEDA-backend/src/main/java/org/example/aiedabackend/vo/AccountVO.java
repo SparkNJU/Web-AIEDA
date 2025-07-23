@@ -3,6 +3,7 @@ package org.example.aiedabackend.vo;
 import org.example.aiedabackend.po.Account;
 
 public class AccountVO {
+    private int uid;
 
     private String username;
 
@@ -15,6 +16,11 @@ public class AccountVO {
     private Integer role;
 
     // Getters and Setters
+
+    public int getUid() { return uid; }
+
+    public void setUid(int uid) { this.uid = uid; }
+
     public String getUsername() {
         return username;
     }

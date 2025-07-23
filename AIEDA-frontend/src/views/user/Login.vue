@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { userInfo, userLogin } from "../../api/user"
+import { userLogin } from "../../api/user"
 import { captchaGenerator } from '../../utils/captcha'
 import { User, Lock, PictureRounded } from '@element-plus/icons-vue'
 
@@ -39,7 +39,6 @@ const handleLogin = async () => {
     ElMessage({
       message: "验证码错误",
       type: 'error',
-      center: true,
     })
     getCaptcha()
     captcha.value = ''
@@ -54,7 +53,6 @@ const handleLogin = async () => {
       ElMessage({
         message: res.data.message,
         type: 'success',
-        center: true,
       })
       const token = res.data.data
       sessionStorage.setItem('token', token)
@@ -64,7 +62,6 @@ const handleLogin = async () => {
       ElMessage({
         message: res.data.message,
         type: 'error',
-        center: true,
       })
       getCaptcha()
       captcha.value = ''
@@ -74,7 +71,6 @@ const handleLogin = async () => {
     ElMessage({
       message: "登录失败，请稍后重试",
       type: 'error',
-      center: true,
     })
     console.error("登录错误:", error)
     getCaptcha()

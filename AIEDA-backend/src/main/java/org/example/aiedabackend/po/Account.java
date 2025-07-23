@@ -29,7 +29,7 @@ public class Account {
     @Column(length = 500)
     private String description;
 
-    @Column(nullable = false, columnDefinition = "INT DEFAULT 2")
+    @Column(nullable = false, columnDefinition = "INT DEFAULT 1")
     private Integer role;
 
     public Account(String username, String phone, String password, String description, Integer role) {
@@ -42,6 +42,7 @@ public class Account {
 
     public AccountVO toVO() {
         AccountVO accountVO = new AccountVO();
+        accountVO.setUid(uid);
         accountVO.setUsername(this.username);
         accountVO.setPhone(this.phone);
         accountVO.setDescription(this.description);

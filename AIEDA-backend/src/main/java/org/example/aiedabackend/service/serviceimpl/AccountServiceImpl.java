@@ -37,7 +37,7 @@ public class AccountServiceImpl implements AccountService {
 
         // 确保有默认角色
         if (account.getRole() == null) {
-            account.setRole(Integer.valueOf(RoleConstant.USER)); // 默认为普通用户
+            account.setRole(RoleConstant.USER); // 默认为普通用户
         }
 
         accountRepository.save(account);

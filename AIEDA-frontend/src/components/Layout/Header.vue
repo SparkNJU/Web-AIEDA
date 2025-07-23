@@ -1,4 +1,3 @@
-// filepath: [Header.vue](http://_vscodecontentref_/0)
 <template>
   <header class="header">
     <div class="logo">
@@ -9,6 +8,7 @@
     <nav class="nav">
       <ul>
         <li><router-link to="/">首页</router-link></li>
+        <li><router-link to="/chat">智能助手</router-link></li>
         <li><router-link to="/llm">IGBT网表生成器</router-link></li>
         <!-- <li><router-link to="/about">关于我们</router-link></li>
         <li><router-link to="/services">服务</router-link></li>
@@ -78,10 +78,6 @@ watch(
 
 <style scoped>
 .header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
   width: 100%;
   display: flex;
   justify-content: space-between;
@@ -89,8 +85,6 @@ watch(
   padding: 1rem 2rem;
   background-color: #fff;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  z-index: 1000; /* 确保Header在其他元素之上 */
-  backdrop-filter: blur(10px); /* 可选：添加毛玻璃效果 */
 }
 
 .logo h1 {

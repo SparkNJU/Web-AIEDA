@@ -62,6 +62,8 @@ const getUserInfo = async () => {
       userInfo.phone = data.phone;
       userInfo.role = data.role;
       userInfo.description = data.description;
+      sessionStorage.setItem('uid', data.uid);
+
       // 初始化编辑表单
       editForm.username = userInfo.username;
       editForm.description = userInfo.description || '';
@@ -78,7 +80,6 @@ const getUserInfo = async () => {
 // 校验逻辑
 const hasPasswordInput = computed(() => editForm.password !== '');
 const hasConfirmPasswordInput = computed(() => editForm.confirmPassword !== '');
-const hasCaptchaInput = computed(() => editForm.captcha !== '');
 const isConfirmPasswordValid = computed(() => editForm.password === editForm.confirmPassword && hasPasswordInput.value);
 
 // 获取验证码
@@ -95,7 +96,6 @@ const updateProfile = async () => {
       ElMessage({
         message: '验证码错误',
         type: 'error',
-        center: true,
       });
       getCaptcha();
       editForm.captcha = '';
@@ -106,7 +106,6 @@ const updateProfile = async () => {
       ElMessage({
         message: '两次输入的新密码不一致',
         type: 'error',
-        center: true,
       });
       return;
     }
@@ -117,8 +116,9 @@ const updateProfile = async () => {
       username?: string;
       description?: string;
       password?: string;
-    } = {};
-    updateData.phone = userInfo.phone; // 必须包含phone
+    } = {
+      phone: userInfo.phone // 必须包含phone
+    };
     if (editForm.username !== userInfo.username) {
       updateData.username = editForm.username;
     }

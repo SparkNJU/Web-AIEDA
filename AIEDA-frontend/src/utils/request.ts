@@ -16,7 +16,9 @@ service.interceptors.request.use(
     config => {
         const token = getToken()
         if (token) {
-            if (!config.headers) config.headers = {}
+            if (!config.headers) {
+                config.headers = {} as any
+            }
             config.headers['token'] = token
         }
         return config

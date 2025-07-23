@@ -1,6 +1,6 @@
 import { axios } from '../utils/request'
-const USER_MODULE = '/api/accounts';
-
+import { USER_MODULE } from './_prefix';
+// 用户相关接口
 type LoginInfo = {
     phone: string,
     password: string

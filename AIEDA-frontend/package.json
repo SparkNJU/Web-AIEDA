@@ -5,16 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:5173": "vite --port 5173",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:80": "vite preview --port 80 --host 0.0.0.0",
+    "serve": "npm run build && npm run preview:80",
+    "serve:local": "vite preview --port 8080"
   },
   "dependencies": {
     "axios": "^1.10.0",
     "element-plus": "^2.10.3",
+    "markdown-it": "^14.1.0",
     "vue": "^3.5.17",
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
     "@vitejs/plugin-vue": "^6.0.0",
     "@vue/tsconfig": "^0.7.0",
     "typescript": "~5.8.3",
