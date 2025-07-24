@@ -7,6 +7,8 @@ const props = defineProps<{
   inputMessage: string
   isLoading: boolean
   inputDisabled: boolean
+  isStreamMode?: boolean
+  isStreaming?: boolean
 }>()
 
 // 事件传递
@@ -51,7 +53,7 @@ const sendMessage = () => {
       <el-button 
         type="primary" 
         @click="sendMessage" 
-        :loading="isLoading"
+        :loading="isLoading || isStreaming"
         :disabled="inputDisabled || !inputMessage.trim()"
         :icon="ArrowUp"
         class="send-button"
@@ -59,13 +61,18 @@ const sendMessage = () => {
         title="发送消息"
         round
       >
-        发送
+        {{ isStreaming ? '生成中...' : '发送' }}
       </el-button>
     </div>
 
     <!-- 底部提示 -->
     <div class="input-footer">
-      <div class="input-tips">按 Enter 发送，Shift + Enter 换行</div>
+      <div class="input-tips">
+        按 Enter 发送，Shift + Enter 换行
+        <span v-if="isStreamMode" class="stream-hint">
+          · 流式模式：AI将实时回复
+        </span>
+      </div>
     </div>
   </div>
 </template>
@@ -106,6 +113,11 @@ const sendMessage = () => {
   font-size: 0.75em;
   color: #999;
   text-align: center;
+}
+
+.stream-hint {
+  color: rgb(102, 8, 116);
+  font-weight: 500;
 }
 
 :deep(.el-textarea__inner) {

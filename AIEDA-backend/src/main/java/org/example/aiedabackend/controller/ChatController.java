@@ -7,6 +7,7 @@ import org.example.aiedabackend.service.ChatService;
 import org.example.aiedabackend.vo.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -52,6 +53,14 @@ public class ChatController {
             @RequestBody ChatRequestVO request) {
         RecordVO replyRecord = chatService.sendMessage(request.getUid(), request.getSid(), request.getContent());
         return Response.buildSuccess(replyRecord);
+    }
+
+    @Operation(summary = "发送消息并流式获取AI回复", description = "向指定会话发送用户消息，并通过SSE流式获取AI回复")
+    @PostMapping("/messages/stream")
+    public SseEmitter sendMessageSSE(
+            @Parameter(description = "聊天消息请求对象", required = true)
+            @RequestBody ChatRequestVO request) {
+        return chatService.sendMessageSSE(request.getUid(), request.getSid(), request.getContent());
     }
 
     @Operation(summary = "更新会话标题", description = "更新指定会话的标题")

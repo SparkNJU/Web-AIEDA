@@ -2,6 +2,7 @@ package org.example.aiedabackend.service;
 
 import org.example.aiedabackend.vo.RecordVO;
 import org.example.aiedabackend.vo.SessionVO;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -25,6 +26,11 @@ public interface ChatService {
      * 发送消息，并接收AI回复
      */
     RecordVO sendMessage(Integer uid, Integer sid, String content);
+
+    /**
+     * 发送消息，并通过SSE流式返回AI回复
+     */
+    SseEmitter sendMessageSSE(Integer uid, Integer sid, String content);
 
     /**
      * 更新会话标题

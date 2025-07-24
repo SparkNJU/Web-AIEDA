@@ -9,22 +9,24 @@ const props = defineProps<{
   messages: ChatRecord[]
 }>()
 
-// 使用props防止TypeScript警告
-const { messages } = props
+// 不要解构props，直接使用props.messages来保持响应式
 </script>
 
 <template>
   <el-scrollbar class="chat-messages" ref="messagesContainer">
     <el-row 
-      v-for="(msg, index) in messages" 
-      :key="index" 
+      v-for="(msg, index) in props.messages" 
+      :key="`row-${msg.rid || msg.sid || 'temp'}-${index}`"
       :justify="msg.direction ? 'end' : 'start'"
       class="message-row"
     >
       <el-col>
         <MessageBubble 
+          :key="`msg-${index}`"
           :content="msg.content"
           :is-user="msg.direction"
+          :is-streaming="msg.isStreaming"
+          :is-error="msg.isError"
         />
       </el-col>
     </el-row>

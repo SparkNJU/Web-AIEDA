@@ -2,56 +2,90 @@
 <script setup lang="ts">
 import { ElCard } from 'element-plus'
 import MarkdownIt from 'markdown-it'
+import { watch } from 'vue'
 
 // 接收单个消息参数
 const props = defineProps<{
   content: string
   isUser: boolean // true=用户消息，false=AI消息
+  isStreaming?: boolean // 是否正在流式输出
+  isError?: boolean // 是否为错误消息
 }>()
 
 const md = new MarkdownIt()
 
-// 使用props防止TypeScript警告
-const { content, isUser } = props
+// 添加watch来调试props变化
+watch(() => props.content, (newContent, oldContent) => {
+  if (!props.isUser) {
+    console.log('MessageBubble content 更新:', {
+      old: oldContent?.substring(0, 30) + '...',
+      new: newContent?.substring(0, 30) + '...',
+      length: newContent?.length,
+      timestamp: new Date().toLocaleTimeString()
+    })
+  }
+}, { immediate: true })
 
-// 解析内容
-const parseThoughtContent = (content: string) => {
-  const match = content.match(/<thought>([\s\S]*?)<\/thought>/)
-  return match ? match[1].trim().replace(/\n/g, '<br>') : ''
+// 添加对isStreaming的监听
+watch(() => props.isStreaming, (newStreaming, oldStreaming) => {
+  if (!props.isUser) {
+    console.log('MessageBubble isStreaming 更新:', {
+      old: oldStreaming,
+      new: newStreaming,
+      timestamp: new Date().toLocaleTimeString()
+    })
+  }
+})
+
+// 添加对整个props对象的深度监听
+watch(() => ({ ...props }), (newProps, oldProps) => {
+  if (!props.isUser) {
+    console.log('MessageBubble props 完整更新:', {
+      contentChanged: newProps.content !== oldProps?.content,
+      streamingChanged: newProps.isStreaming !== oldProps?.isStreaming,
+      newContentLength: newProps.content?.length,
+      newIsStreaming: newProps.isStreaming,
+      newContent: newProps.content?.substring(0, 50) + (newProps.content?.length > 50 ? '...' : ''),
+      timestamp: new Date().toLocaleTimeString()
+    })
+  }
+}, { deep: true })
+
+// 不要解构props，直接使用props.xxx来保持响应式
+
+// 简化内容处理，去掉thought相关逻辑，处理answer标签
+const replaceRefTags = (text: string) => {
+  // 处理引用标签
+  let processed = text.replace(/<ref>\[(.*?)\]<\/ref>/g, '[$1]')
+  // 移除answer标签但保留内容
+  processed = processed.replace(/<answer>([\s\S]*?)<\/answer>/g, '$1')
+  return processed
 }
-
-const parseResponseContent = (content: string) => {
-  return content.replace(/<thought>[\s\S]*?<\/thought>/, '').trim()
-}
-
-const replaceRefTags = (text: string) => text.replace(/<ref>\[(.*?)\]<\/ref>/g, '[$1]')
 </script>
 
 <template>
   <el-card 
-    :class="isUser ? 'user-message' : 'ai-message'"
+    :class="[
+      props.isUser ? 'user-message' : 'ai-message',
+      { 'streaming-message': props.isStreaming, 'error-message': props.isError }
+    ]"
     shadow="never"
     body-style="padding:12px 16px; display: inline-block"
   >
     <!-- 用户消息 -->
-    <template v-if="isUser">
-      {{ content }}
+    <template v-if="props.isUser">
+      {{ props.content }}
     </template>
 
-    <!-- AI消息（带思考过程） -->
+    <!-- AI消息 -->
     <template v-else>
-      <div v-if="content.includes('<thought>')" class="ai-content">
-        <!-- 思考过程 -->
-        <div class="thought-bubble">
-          <div v-html="parseThoughtContent(content)"></div>
-        </div>
-        <!-- 正式回复 -->
-        <div 
-          class="md-content" 
-          v-html="md.render(replaceRefTags(parseResponseContent(content)))"
-        />
+      <!-- 直接渲染内容，支持Markdown -->
+      <div class="md-content" v-html="md.render(replaceRefTags(props.content))" />
+      
+      <!-- 流式输出指示器 -->
+      <div v-if="props.isStreaming && !props.content.includes('🤔') && !props.content.includes('⏳') && !props.content.includes('❌')" class="streaming-indicator">
+        <span class="cursor">|</span>
       </div>
-      <div v-else class="md-content" v-html="md.render(replaceRefTags(content))" />
     </template>
   </el-card>
 </template>
@@ -69,6 +103,53 @@ const replaceRefTags = (text: string) => text.replace(/<ref>\[(.*?)\]<\/ref>/g, 
   border-radius: 12px;
 }
 
+.streaming-message {
+  border-color: rgba(102, 8, 116, 0.3) !important;
+  box-shadow: 0 0 0 1px rgba(102, 8, 116, 0.1) !important;
+  position: relative;
+}
+
+.streaming-message::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 12px;
+  background: linear-gradient(45deg, transparent 30%, rgba(102, 8, 116, 0.05) 50%, transparent 70%);
+  animation: shimmer 2s infinite;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.error-message {
+  border-color: #f56565 !important;
+  background-color: #fef5f5 !important;
+}
+
+.streaming-indicator {
+  display: inline-block;
+  margin-left: 4px;
+}
+
+.cursor {
+  animation: blink 1s infinite;
+  font-weight: bold;
+  color: rgba(102, 8, 116, 0.8);
+  font-size: 1.2em;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
 .thought-bubble {
   background-color: #f0f0f0;
   border-radius: 8px;
@@ -77,6 +158,7 @@ const replaceRefTags = (text: string) => text.replace(/<ref>\[(.*?)\]<\/ref>/g, 
   font-size: 0.85em;
   color: #666;
   border-left: 3px solid #ccc;
+  display: none; /* 隐藏thought相关样式 */
 }
 
 .md-content :deep(pre) {

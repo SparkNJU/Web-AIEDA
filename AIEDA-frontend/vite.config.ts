@@ -10,8 +10,9 @@ export default defineConfig({
     strictPort: false,
   },
   preview: {
-    port: 80, // 生产预览使用80端口
+    port: 5174, // 使用5174端口，避免与开发端口5173冲突
     host: '0.0.0.0', // 生产环境允许外部访问
-    strictPort: true, // 严格使用80端口
-  }
+    strictPort: true,
+  },
+  
 })
