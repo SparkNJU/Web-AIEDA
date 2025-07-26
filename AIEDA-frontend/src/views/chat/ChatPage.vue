@@ -597,9 +597,9 @@ const scrollToBottom = () => {
 
 <style scoped>
 .chat-container {
-  height: 100vh;
+  height: 80vh;
   background-color: rgba(102, 8, 116, 0.02);
-  padding-top: 80px; /* 为固定Header预留空间 */
+
 }
 
 .chat-content {
@@ -608,12 +608,16 @@ const scrollToBottom = () => {
   background-color: white;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .chat-layout {
   display: flex;
   height: 100%;
   width: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .chat-main {
@@ -622,10 +626,11 @@ const scrollToBottom = () => {
   flex-direction: column;
   height: 100%;
   min-width: 0; /* 防止内容溢出 */
+  position: relative;
 }
 
 .chat-main-header {
-  padding: 16px 20px;
+  padding: 12px 20px; /* 减少垂直padding */
   border-bottom: 1px solid #e0e0e0;
   background-color: #f8f9fa;
   flex-shrink: 0;
@@ -663,5 +668,14 @@ const scrollToBottom = () => {
   flex-direction: column;
   min-height: 0; /* 允许内容收缩 */
   overflow: hidden;
+  position: relative;
+  /* 确保内容区域填满可用空间 */
+  height: 100%;
+}
+
+/* 确保欢迎卡片和消息列表完全填充容器 */
+.chat-main-content > * {
+  flex: 1;
+  height: 100%;
 }
 </style>

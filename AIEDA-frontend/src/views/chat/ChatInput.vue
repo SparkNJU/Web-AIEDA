@@ -79,13 +79,14 @@ const sendMessage = () => {
 
 <style scoped>
 .chat-input {
-  padding: 16px 20px;
+  padding: 12px 16px; /* 减少padding */
   border-top: 1px solid #e0e0e0;
   background: #f8f9fa;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px; /* 减少间距 */
   flex-shrink: 0; /* 防止被压缩 */
+  box-sizing: border-box;
 }
 
 .input-row {
@@ -110,9 +111,11 @@ const sendMessage = () => {
 }
 
 .input-tips {
-  font-size: 0.75em;
+  font-size: 0.7em; /* 稍微减小字体 */
   color: #999;
   text-align: center;
+  margin: 0;
+  padding: 0;
 }
 
 .stream-hint {
@@ -123,8 +126,9 @@ const sendMessage = () => {
 :deep(.el-textarea__inner) {
   border-radius: 8px;
   border-color: #dcdfe6;
-  padding: 12px;
+  padding: 10px 12px; /* 稍微减少内边距 */
   line-height: 1.4;
+  min-height: 40px; /* 设置最小高度 */
 }
 
 :deep(.el-textarea__inner):focus {

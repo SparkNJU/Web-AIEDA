@@ -37,13 +37,15 @@ const props = defineProps<{
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 20px;
+  padding: 12px 16px; /* 减少padding */
   background-color: #fafafa;
   min-height: 0; /* 允许收缩 */
+  height: 100%; /* 确保填满父容器 */
+  box-sizing: border-box;
 }
 
 .message-row { 
-  margin: 12px 0; 
+  margin: 8px 0; /* 减少消息间距 */
 }
 
 .message-row:first-child {
@@ -52,5 +54,15 @@ const props = defineProps<{
 
 .message-row:last-child {
   margin-bottom: 0;
+}
+
+/* 确保滚动条样式 */
+.chat-messages :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.chat-messages :deep(.el-scrollbar__view) {
+  height: 100%;
+  min-height: fit-content;
 }
 </style>
