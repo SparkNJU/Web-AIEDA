@@ -14,47 +14,37 @@ const props = defineProps<{
 
 const md = new MarkdownIt()
 
-// 添加watch来调试props变化
+// 添加watch来调试props变化，同时优化性能
 watch(() => props.content, (newContent, oldContent) => {
   if (!props.isUser) {
     console.log('MessageBubble content 更新:', {
       old: oldContent?.substring(0, 30) + '...',
       new: newContent?.substring(0, 30) + '...',
       length: newContent?.length,
+      isStreaming: props.isStreaming,
+      fullContent: newContent, // 添加完整内容用于调试
       timestamp: new Date().toLocaleTimeString()
     })
   }
 }, { immediate: true })
 
-// 添加对isStreaming的监听
+// 添加对isStreaming的监听，优化渲染时机
 watch(() => props.isStreaming, (newStreaming, oldStreaming) => {
   if (!props.isUser) {
     console.log('MessageBubble isStreaming 更新:', {
       old: oldStreaming,
       new: newStreaming,
+      contentLength: props.content?.length,
       timestamp: new Date().toLocaleTimeString()
     })
   }
 })
 
-// 添加对整个props对象的深度监听
-watch(() => ({ ...props }), (newProps, oldProps) => {
-  if (!props.isUser) {
-    console.log('MessageBubble props 完整更新:', {
-      contentChanged: newProps.content !== oldProps?.content,
-      streamingChanged: newProps.isStreaming !== oldProps?.isStreaming,
-      newContentLength: newProps.content?.length,
-      newIsStreaming: newProps.isStreaming,
-      newContent: newProps.content?.substring(0, 50) + (newProps.content?.length > 50 ? '...' : ''),
-      timestamp: new Date().toLocaleTimeString()
-    })
-  }
-}, { deep: true })
-
 // 不要解构props，直接使用props.xxx来保持响应式
 
-// 简化内容处理，去掉thought相关逻辑，处理answer标签
+// 简化内容处理，去掉thought相关逻辑，处理answer标签，同时优化实时渲染
 const replaceRefTags = (text: string) => {
+  if (!text) return ''
   // 处理引用标签
   let processed = text.replace(/<ref>\[(.*?)\]<\/ref>/g, '[$1]')
   // 移除answer标签但保留内容
@@ -79,8 +69,15 @@ const replaceRefTags = (text: string) => {
 
     <!-- AI消息 -->
     <template v-else>
-      <!-- 直接渲染内容，支持Markdown -->
-      <div class="md-content" v-html="md.render(replaceRefTags(props.content))" />
+      <!-- 对于正在流式输出的内容，先显示原始文本，流式完成后再渲染markdown -->
+      <template v-if="props.isStreaming">
+        <!-- 流式输出时使用简单文本渲染，避免频繁的markdown解析影响性能 -->
+        <div class="streaming-content">{{ replaceRefTags(props.content) }}</div>
+      </template>
+      <template v-else>
+        <!-- 流式完成后渲染markdown格式 -->
+        <div class="md-content" v-html="md.render(replaceRefTags(props.content))" />
+      </template>
       
       <!-- 流式输出指示器 -->
       <div v-if="props.isStreaming && !props.content.includes('🤔') && !props.content.includes('⏳') && !props.content.includes('❌')" class="streaming-indicator">
@@ -159,6 +156,13 @@ const replaceRefTags = (text: string) => {
   color: #666;
   border-left: 3px solid #ccc;
   display: none; /* 隐藏thought相关样式 */
+}
+
+.streaming-content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  line-height: 1.6;
+  font-family: inherit;
 }
 
 .md-content :deep(pre) {

@@ -279,6 +279,16 @@ const handleSendMessageStream = async (messageToSend: string) => {
           triggerRef(messages)
           
           console.log('SSE流读取完成，已停止流式状态')
+          
+          // 如果没有收到complete事件，手动触发
+          if (currentStreamMessage.value.length > 0) {
+            console.log('流结束但未收到complete事件，手动触发complete处理')
+            handleSSEEvent({
+              type: 'complete',
+              message: '回复完成',
+              recordId: -1
+            }, aiMessageIndex)
+          }
         }
         return
       }
@@ -298,14 +308,24 @@ const handleSendMessageStream = async (messageToSend: string) => {
         } else if (trimmedLine.startsWith('data:')) {
           const data = trimmedLine.substring(5).trim()
           console.log('SSE Data:', data)
-          if (data && data !== '[DONE]') {
+          
+          // 检查data是否为空或只包含空白字符
+          if (data && data !== '[DONE]' && data !== '{}' && data.length > 0) {
             try {
               const eventData = JSON.parse(data)
-              console.log('解析后的事件数据:', eventData)
-              handleSSEEvent(eventData, aiMessageIndex)
+              // 只处理有效的事件数据
+              if (eventData && eventData.type) {
+                console.log('解析后的事件数据:', eventData)
+                handleSSEEvent(eventData, aiMessageIndex)
+              } else {
+                console.log('跳过无效事件数据:', eventData)
+              }
             } catch (e) {
               console.warn('Failed to parse SSE data:', data, e)
+              // 对于无法解析的数据，不处理但不中断流程
             }
+          } else {
+            console.log('跳过空的data:', data)
           }
         }
       }
@@ -383,9 +403,9 @@ const handleSSEEvent = (eventData: any, messageIndex: number) => {
       
       // 累加内容，实现流式显示
       currentStreamMessage.value += contentToAdd
-      console.log('更新后累积内容:', currentStreamMessage.value.substring(0, 100) + '...')
+      console.log('更新后累积内容长度:', currentStreamMessage.value.length)
       
-      // 直接更新消息内容，使用单一的可靠方法
+      // 实时更新消息内容
       if (messages.value[messageIndex]) {
         // 只使用数组替换方法，确保Vue能检测到所有变化
         const newMessages = [...messages.value]
@@ -399,18 +419,17 @@ const handleSSEEvent = (eventData: any, messageIndex: number) => {
         // 强制触发Vue的响应式更新
         triggerRef(messages)
         
-        console.log(`已更新第${messageIndex}条消息，内容长度:`, currentStreamMessage.value.length)
-        console.log(`isStreaming状态:`, messages.value[messageIndex].isStreaming)
+        console.log(`实时更新第${messageIndex}条消息，内容长度:`, currentStreamMessage.value.length)
       }
       
-      // 防抖滚动，避免过于频繁
+      // 优化滚动，使用更短的防抖时间以提高响应性
       if (scrollTimer) {
         clearTimeout(scrollTimer)
       }
       scrollTimer = window.setTimeout(() => {
         scrollToBottom()
         scrollTimer = null
-      }, 50) // 50ms防抖
+      }, 30) // 减少到30ms防抖，提高实时性
       break
       
     case 'complete':
@@ -430,7 +449,7 @@ const handleSSEEvent = (eventData: any, messageIndex: number) => {
         // 流式输出完成后，重新设置内容以触发MessageBubble的markdown重新渲染
         console.log('流式输出完成，准备重新渲染markdown内容')
         console.log('完整内容长度:', completeContent.length)
-        console.log('内容预览:', completeContent.substring(0, 100) + '...')
+        console.log('完整内容:', completeContent)
         
         // 使用数组替换方式确保Vue能检测到所有变化
         const newMessages = [...messages.value]
@@ -452,7 +471,7 @@ const handleSSEEvent = (eventData: any, messageIndex: number) => {
           scrollToBottom()
         })
         
-        console.log('最终消息内容长度:', messages.value[messageIndex].content.length)
+        console.log('最终消息内容长度:', completeContent.length)
         console.log('isStreaming 已设置为 false，将触发MessageBubble的md.render重新渲染')
       }
       currentStreamMessage.value = ''

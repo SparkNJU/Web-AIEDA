@@ -56,7 +56,7 @@ public class ChatController {
     }
 
     @Operation(summary = "发送消息并流式获取AI回复", description = "向指定会话发送用户消息，并通过SSE流式获取AI回复")
-    @PostMapping("/messages/stream")
+    @PostMapping(value = "/messages/stream", produces = "text/event-stream")
     public SseEmitter sendMessageSSE(
             @Parameter(description = "聊天消息请求对象", required = true)
             @RequestBody ChatRequestVO request) {
