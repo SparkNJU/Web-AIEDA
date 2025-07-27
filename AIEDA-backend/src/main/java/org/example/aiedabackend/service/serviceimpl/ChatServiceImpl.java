@@ -432,62 +432,82 @@ public class ChatServiceImpl implements ChatService {
         System.out.println(String.format("事件详情 - session_id: %s, user_id: %s, event: %s, tool: %s",
             eventSessionId, userId, eventType, tool));
 
-        // 只处理当前会话的llm_tool.chunk事件
-        if (!sessionId.equals(eventSessionId) || !"llm_tool.chunk".equals(eventType)) {
-            return false;
-        }
-
-        @SuppressWarnings("unchecked")
-        var payload = (java.util.Map<String, Object>) event.get("payload");
-        if (payload != null && payload.get("delta") != null) {
-            String delta = payload.get("delta").toString();
-
-            // 打印delta内容
-            System.out.println("Delta内容: " + delta);
-
-            if (!delta.isEmpty()) {
-                fullDelta.append(delta);
-
-                // 检查是否包含finish标签
-                String fullDeltaStr = fullDelta.toString();
-                if (fullDeltaStr.contains("</finish>")) {
-                    log.info("检测到</finish>标签，AI回复生成完成");
+        // 检查是否是结束事件（after + orchestrator + result.message = "FINISH"）
+        if (sessionId.equals(eventSessionId) && "after".equals(eventType) && "orchestrator".equals(tool)) {
+            // 检查result字段
+            @SuppressWarnings("unchecked")
+            var result = (java.util.Map<String, Object>) event.get("result");
+            if (result != null && Boolean.TRUE.equals(result.get("success"))) {
+                String message = (String) result.get("message");
+                if ("FINISH".equals(message)) {
+                    log.info("检测到result.message=FINISH，AI回复生成完成");
                     
-                    // 发送最后的内容片段（如果有的话）
-                    String finalContent = extractContentFromDelta(fullDeltaStr);
-                    if (!finalContent.isEmpty() && finalContent.length() > aiReply.length()) {
-                        String newContent = finalContent.substring(aiReply.length());
-                        if (!newContent.isEmpty()) {
-                            aiReply.append(newContent);
-                            // 实时发送最后的内容片段到前端
-                            sendDeltaToFrontend(emitter, newContent);
+                    // 从result.data中提取最终答案
+                    @SuppressWarnings("unchecked")
+                    var resultData = (java.util.Map<String, Object>) result.get("data");
+                    if (resultData != null) {
+                        Object answer = resultData.get("answer");
+                        if (answer != null) {
+                            String finalAnswer = extractContentFromDelta(answer.toString());
+                            if (!finalAnswer.isEmpty() && finalAnswer.length() > aiReply.length()) {
+                                String newContent = finalAnswer.substring(aiReply.length());
+                                if (!newContent.isEmpty()) {
+                                    aiReply.append(newContent);
+                                    sendDeltaToFrontend(emitter, newContent);
+                                    System.out.println("发送最终答案内容: " + newContent);
+                                }
+                            }
                         }
                     }
                     
                     return true; // 生成完成
                 }
+            }
+        }
 
-                // 实时处理和发送内容，无论是否找到开始标签
-                if (foundFinishStart || fullDeltaStr.contains("<finish>")) {
-                    String extractedContent = extractContentFromDelta(fullDeltaStr);
-                    if (!extractedContent.isEmpty() && extractedContent.length() > aiReply.length()) {
-                        // 计算新增的内容
-                        String newContent = extractedContent.substring(aiReply.length());
-                        if (!newContent.isEmpty()) {
-                            aiReply.append(newContent);
-                            // 实时发送新增内容到前端
-                            sendDeltaToFrontend(emitter, newContent);
-                            System.out.println("实时发送内容片段: " + newContent);
+        // 处理流式输出事件（llm_tool.chunk）
+        if (sessionId.equals(eventSessionId) && "llm_tool.chunk".equals(eventType)) {
+            @SuppressWarnings("unchecked")
+            var payload = (java.util.Map<String, Object>) event.get("payload");
+            if (payload != null && payload.get("delta") != null) {
+                String delta = payload.get("delta").toString();
+
+                // 打印delta内容
+                System.out.println("Delta内容: " + delta);
+
+                if (!delta.isEmpty()) {
+                    fullDelta.append(delta);
+                    
+                    // 直接发送delta内容，不需要等待完整的finish标签
+                    if (!delta.trim().isEmpty()) {
+                        // 如果delta包含JSON格式的开始或结束，进行适当处理
+                        String cleanDelta = delta;
+                        
+                        // 如果包含finish标签，尝试提取内部内容
+                        if (delta.contains("<finish>") || delta.contains("</finish>")) {
+                            String extracted = extractContentFromDelta(fullDelta.toString());
+                            if (!extracted.isEmpty() && extracted.length() > aiReply.length()) {
+                                cleanDelta = extracted.substring(aiReply.length());
+                            } else {
+                                cleanDelta = ""; // 已处理过的内容，不重复发送
+                            }
+                        } else if (!delta.contains("<") && !delta.contains(">") && !delta.contains("{") && !delta.contains("}")) {
+                            // 如果是纯文本内容，直接使用
+                            cleanDelta = delta;
+                        } else {
+                            // 如果包含JSON片段，尝试清理
+                            cleanDelta = delta
+                                .replaceAll("\\{\"answer\":\"?", "")
+                                .replaceAll("\"?\\}$", "")
+                                .trim();
                         }
-                    }
-                } else {
-                    // 如果还没找到开始标签，但有delta内容，也尝试直接发送
-                    // 这确保不会错过任何有用的内容
-                    if (delta.trim().length() > 0 && !delta.contains("<") && !delta.contains(">")) {
-                        // 如果delta不包含标签，可能是纯文本内容，直接发送
-                        aiReply.append(delta);
-                        sendDeltaToFrontend(emitter, delta);
-                        System.out.println("直接发送delta内容: " + delta);
+                        
+                        // 只发送一次处理后的内容
+                        if (!cleanDelta.isEmpty()) {
+                            aiReply.append(cleanDelta);
+                            sendDeltaToFrontend(emitter, cleanDelta);
+                            System.out.println("发送处理后的delta内容: " + cleanDelta);
+                        }
                     }
                 }
             }
@@ -602,38 +622,52 @@ public class ChatServiceImpl implements ChatService {
     }
 
     /**
-     * 从完整的delta字符串中提取finish标签内的内容
+     * 从完整的delta字符串中提取finish标签内的答案内容
      */
     private String extractContentFromDelta(String deltaStr) {
         try {
+            // 查找<finish>标签内的内容
             int startIndex = deltaStr.indexOf("<finish>");
-            if (startIndex == -1) {
-                return "";
-            }
-
             int endIndex = deltaStr.indexOf("</finish>");
-            if (endIndex == -1) {
-                // 还没有结束标签，返回开始标签后的所有内容
-                String content = deltaStr.substring(startIndex + "<finish>".length());
-                // 查找answer: 后的内容
-                int answerIndex = content.indexOf("answer:");
-                if (answerIndex != -1) {
-                    return content.substring(answerIndex + "answer:".length()).trim();
+            
+            if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+                // 提取<finish>标签内的内容
+                String finishContent = deltaStr.substring(startIndex + 8, endIndex).trim();
+                System.out.println("提取到finish标签内容: " + finishContent);
+                
+                // 解析JSON，提取answer字段
+                try {
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> json = mapper.readValue(finishContent, java.util.Map.class);
+                    
+                    Object answer = json.get("answer");
+                    if (answer != null) {
+                        String answerContent = answer.toString();
+                        System.out.println("提取到answer内容: " + answerContent);
+                        return answerContent;
+                    }
+                } catch (Exception jsonError) {
+                    System.out.println("JSON解析失败，返回原始内容: " + finishContent);
+                    // 如果JSON解析失败，返回原始内容
+                    return finishContent;
                 }
-                return content.trim();
-            } else {
-                // 有完整的finish标签，提取中间的内容
-                String content = deltaStr.substring(startIndex + "<finish>".length(), endIndex);
-                // 查找answer: 后的内容
-                int answerIndex = content.indexOf("answer:");
-                if (answerIndex != -1) {
-                    return content.substring(answerIndex + "answer:".length()).trim();
-                }
-                return content.trim();
             }
+            
+            // 如果没有找到finish标签，直接返回累积的delta内容
+            // 去除可能的JSON格式字符和标签
+            String cleanedContent = deltaStr
+                .replaceAll("</?finish>", "")  // 移除finish标签
+                .replaceAll("\\{\"answer\":\"?", "")  // 移除answer开始部分
+                .replaceAll("\"?\\}$", "")  // 移除结尾的引号和大括号
+                .trim();
+                
+            return cleanedContent;
+            
         } catch (Exception e) {
             log.warn("提取delta内容失败: " + deltaStr, e);
-            return "";
+            // 如果所有解析都失败，返回清理后的文本
+            return deltaStr.replaceAll("[<>{}\"\\[\\]]", "").trim();
         }
     }
 }

@@ -1,6 +1,6 @@
 <!-- ChatPage.vue -->
 <script setup lang="ts">
-import { ref, nextTick, computed, onMounted, triggerRef } from 'vue'
+import { ref, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElSwitch } from 'element-plus'
 // 导入子组件
@@ -9,7 +9,7 @@ import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
 import WelcomeCard from './WelcomeCard.vue'
 // 导入API
-import { createSession, getSessionRecords, getUserSessions, sendMessage, sendMessageStream, updateSessionTitle, deleteSession } from '../../api/chat'
+import { createSession, getSessionRecords, getUserSessions, sendMessage, sendMessageStream, createSSEConnection, updateSessionTitle, deleteSession } from '../../api/chat'
 
 // 类型定义
 export type SessionRecord = {
@@ -41,9 +41,11 @@ const messages = ref<ChatRecord[]>([])
 const inputMessage = ref('')
 const isLoading = ref(false)
 const isStreamMode = ref(true) // 流式输出开关，默认开启
+const useEventSource = ref(false) // 是否使用EventSource方式，默认使用fetch
 const currentStreamMessage = ref('') // 当前流式消息内容
 const isStreaming = ref(false) // 是否正在流式输出
 let scrollTimer: number | null = null // 滚动防抖定时器
+let currentEventSource: EventSource | null = null // 当前的EventSource连接
 
 const suggestionQuestions = [
 "AI 如何提升 EDA 全链路仿真性能？有实测吗？",
@@ -64,6 +66,18 @@ const inputDisabled = computed(() => {
 // 初始化加载
 onMounted(() => {
   loadUserSessions()
+})
+
+// 组件卸载时清理EventSource连接
+onUnmounted(() => {
+  if (currentEventSource) {
+    currentEventSource.close()
+    currentEventSource = null
+  }
+  if (scrollTimer) {
+    clearTimeout(scrollTimer)
+    scrollTimer = null
+  }
 })
 
 // 加载用户会话列表
@@ -233,6 +247,16 @@ const handleSendMessageNormal = async (messageToSend: string) => {
 
 // SSE流式消息发送
 const handleSendMessageStream = async (messageToSend: string) => {
+  // 根据配置选择使用EventSource还是fetch方式
+  if (useEventSource.value) {
+    await handleSendMessageWithEventSource(messageToSend)
+  } else {
+    await handleSendMessageWithFetch(messageToSend)
+  }
+}
+
+// 使用EventSource方式发送消息（标准SSE模式）
+const handleSendMessageWithEventSource = async (messageToSend: string) => {
   isStreaming.value = true
   currentStreamMessage.value = ''
   
@@ -247,87 +271,192 @@ const handleSendMessageStream = async (messageToSend: string) => {
   scrollToBottom()
 
   try {
-    const requestData = {
+    // 关闭之前的连接
+    if (currentEventSource) {
+      currentEventSource.close()
+    }
+
+    // 创建新的EventSource连接
+    currentEventSource = createSSEConnection(currentSessionId.value, userId.value, messageToSend)
+
+    // 监听连接打开
+    currentEventSource.onopen = (event) => {
+      console.log('EventSource连接已建立:', event)
+    }
+
+    // 监听消息事件
+    currentEventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        console.log('EventSource收到消息:', data)
+        handleSSEEvent(data, aiMessageIndex)
+      } catch (e) {
+        console.warn('解析EventSource数据失败:', event.data, e)
+      }
+    }
+
+    // 监听自定义事件类型
+    ;['start', 'delta', 'message', 'complete', 'error'].forEach(eventType => {
+      currentEventSource!.addEventListener(eventType, (event: any) => {
+        try {
+          const data = JSON.parse(event.data)
+          console.log(`EventSource收到${eventType}事件:`, data)
+          handleSSEEvent(data, aiMessageIndex)
+        } catch (e) {
+          console.warn(`解析EventSource ${eventType}事件数据失败:`, event.data, e)
+        }
+      })
+    })
+
+    // 监听连接错误
+    currentEventSource.onerror = (event) => {
+      console.error('EventSource连接错误:', event)
+      ElMessage.error('连接失败，请检查网络或稍后重试')
+      isStreaming.value = false
+      
+      // 移除失败的AI消息
+      if (messages.value[aiMessageIndex]) {
+        messages.value.splice(aiMessageIndex, 1)
+      }
+      
+      // 关闭连接
+      if (currentEventSource) {
+        currentEventSource.close()
+        currentEventSource = null
+      }
+    }
+
+  } catch (error) {
+    console.error('创建EventSource连接失败:', error)
+    ElMessage.error('连接失败，请检查网络或稍后重试')
+    isStreaming.value = false
+    
+    // 移除失败的AI消息
+    if (messages.value[aiMessageIndex]) {
+      messages.value.splice(aiMessageIndex, 1)
+    }
+  }
+}
+
+// 使用fetch方式发送消息（支持POST请求）
+const handleSendMessageWithFetch = async (messageToSend: string) => {
+  isStreaming.value = true
+  currentStreamMessage.value = ''
+  
+  // 添加AI消息占位符
+  const aiMessageIndex = messages.value.length
+  messages.value.push({
+    content: '⏳ 连接中...',
+    direction: false,
+    sid: currentSessionId.value,
+    isStreaming: true
+  })
+  scrollToBottom()
+
+  try {
+    // 使用 chat.ts 中的 API 发送POST请求启动流式回复
+    const response = await sendMessageStream({
       uid: userId.value,
       sid: currentSessionId.value,
       content: messageToSend
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
     }
 
-    const response = await sendMessageStream(requestData)
+    // 读取SSE流
     const reader = response.body?.getReader()
     if (!reader) {
       throw new Error('无法获取响应流')
     }
 
-    const decoder = new TextDecoder()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+    let eventCount = 0
     
-    const readStream = async (): Promise<void> => {
-      const { done, value } = await reader.read()
-      
-      if (done) {
-        isStreaming.value = false
-        // 确保移除流式标记，使用数组更新方式
-        if (messages.value[aiMessageIndex]) {
-          const newMessages = [...messages.value]
-          newMessages[aiMessageIndex] = {
-            ...newMessages[aiMessageIndex],
-            isStreaming: false
-          }
-          messages.value = newMessages
-          
-          // 强制触发Vue的响应式更新
-          triggerRef(messages)
-          
-          console.log('SSE流读取完成，已停止流式状态')
-          
-          // 如果没有收到complete事件，手动触发
-          if (currentStreamMessage.value.length > 0) {
-            console.log('流结束但未收到complete事件，手动触发complete处理')
-            handleSSEEvent({
-              type: 'complete',
-              message: '回复完成',
-              recordId: -1
-            }, aiMessageIndex)
-          }
-        }
-        return
-      }
-      
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n')
+    console.log('[SSE连接] 开始读取流数据')
+    
+    // 处理单个SSE事件字符串
+    const processSingleSSEEvent = async (eventStr: string, messageIndex: number) => {
+      const lines = eventStr.split('\n')
+      let eventType = ''
+      let eventData = ''
       
       for (const line of lines) {
         const trimmedLine = line.trim()
-        if (!trimmedLine) continue
-        
-        // 解析SSE格式: event:xxx 和 data:xxx
         if (trimmedLine.startsWith('event:')) {
-          // 当前事件类型，可以用于调试
-          const eventType = trimmedLine.substring(6).trim()
-          console.log('SSE Event:', eventType)
+          eventType = trimmedLine.substring(6).trim()
         } else if (trimmedLine.startsWith('data:')) {
-          const data = trimmedLine.substring(5).trim()
-          console.log('SSE Data:', data)
+          eventData = trimmedLine.substring(5).trim()
+        }
+      }
+      
+      if (eventType && eventData) {
+        console.log(`[SSE事件] 类型: ${eventType}, 数据长度: ${eventData.length}`)
+        console.log(`[SSE事件] 原始数据: ${eventData.substring(0, 100)}${eventData.length > 100 ? '...' : ''}`)
+        
+        if (!eventData || eventData === '[DONE]' || eventData === '{}') {
+          console.log('[SSE事件] 跳过空事件或结束标记')
+          return
+        }
+        
+        try {
+          const parsedData = JSON.parse(eventData)
+          console.log(`[SSE事件] 解析成功:`, parsedData)
           
-          // 检查data是否为空或只包含空白字符
-          if (data && data !== '[DONE]' && data !== '{}' && data.length > 0) {
-            try {
-              const eventData = JSON.parse(data)
-              // 只处理有效的事件数据
-              if (eventData && eventData.type) {
-                console.log('解析后的事件数据:', eventData)
-                handleSSEEvent(eventData, aiMessageIndex)
-              } else {
-                console.log('跳过无效事件数据:', eventData)
-              }
-            } catch (e) {
-              console.warn('Failed to parse SSE data:', data, e)
-              // 对于无法解析的数据，不处理但不中断流程
-            }
+          if (parsedData && parsedData.type) {
+            await handleSSEEvent(parsedData, messageIndex)
           } else {
-            console.log('跳过空的data:', data)
+            console.warn('[SSE事件] 解析的数据缺少type字段:', parsedData)
+          }
+        } catch (e) {
+          console.warn('[SSE事件] 解析JSON失败:', eventData, e)
+        }
+      }
+    }
+    
+    const readStream = async (): Promise<void> => {
+      try {
+        const { done, value } = await reader.read()
+        
+        if (done) {
+          console.log(`[SSE连接] 流结束，共处理 ${eventCount} 个事件`)
+          isStreaming.value = false
+          // 处理最后的完成状态
+          if (messages.value[aiMessageIndex]) {
+            const msg = messages.value[aiMessageIndex]
+            messages.value.splice(aiMessageIndex, 1, {
+              ...msg,
+              isStreaming: false
+            })
+          }
+          return
+        }
+        
+        // 添加新数据到缓冲区
+        const chunk = decoder.decode(value, { stream: true })
+        buffer += chunk
+        console.log(`[SSE连接] 接收数据块，长度: ${chunk.length}, 缓冲区总长度: ${buffer.length}`)
+        
+        // 按双换行符分割事件（SSE标准格式）
+        const events = buffer.split('\n\n')
+        
+        // 保留最后一个可能不完整的事件
+        if (events.length > 1) {
+          buffer = events.pop() || ''
+          
+          // 处理完整的事件
+          for (const eventStr of events) {
+            if (eventStr.trim()) {
+              await processSingleSSEEvent(eventStr.trim(), aiMessageIndex)
+              eventCount++
+            }
           }
         }
+      } catch (error) {
+        console.error('[SSE连接] 读取流数据时出错:', error)
+        throw error
       }
       
       return readStream()
@@ -347,93 +476,66 @@ const handleSendMessageStream = async (messageToSend: string) => {
 }
 
 // 处理SSE事件
-const handleSSEEvent = (eventData: any, messageIndex: number) => {
-  console.log('处理SSE事件:', eventData)
+const handleSSEEvent = async (eventData: any, messageIndex: number) => {
+  console.log(`[事件处理] 类型: ${eventData.type}, 内容长度: ${eventData.content?.length || 0}`)
   
   switch (eventData.type) {
     case 'start':
-      console.log('AI开始思考:', eventData.message)
-      // 显示思考状态，直接更新内容并确保isStreaming为true
+      console.log('[START事件] AI开始思考:', eventData.message)
+      // 重置累积内容为空字符串，不包含思考提示
+      currentStreamMessage.value = ''
       if (messages.value[messageIndex]) {
-        const newMessages = [...messages.value]
-        newMessages[messageIndex] = {
-          ...newMessages[messageIndex],
-          content: eventData.message || '🤔 AI正在思考...',
-          isStreaming: true // 确保设置为流式状态
-        }
-        messages.value = newMessages
-        
-        // 强制触发Vue的响应式更新
-        triggerRef(messages)
-        
-        console.log('更新思考状态:', messages.value[messageIndex].content)
-        console.log('isStreaming 设置为 true')
+        // 显示思考提示（仅用于UI展示），但不累加到最终内容
+        const msg = messages.value[messageIndex]
+        messages.value.splice(messageIndex, 1, { 
+          ...msg, 
+          content: eventData.message || 'AI正在思考...', 
+          isStreaming: true 
+        })
+        await nextTick()
       }
       scrollToBottom()
       break
       
     case 'delta':
     case 'message': // 兼容后端返回的message事件类型
-      console.log('AI回复片段:', eventData.content)
-      console.log('当前累积内容长度:', currentStreamMessage.value.length)
+      const deltaContent = eventData.content || ''
+      console.log(`[DELTA事件] 片段长度: ${deltaContent.length}`)
+      console.log(`[DELTA事件] 片段内容: ${deltaContent.substring(0, 50)}${deltaContent.length > 50 ? '...' : ''}`)
+      console.log(`[DELTA事件] 当前累积长度: ${currentStreamMessage.value.length}`)
       
-      // 处理可能的JSON格式内容
-      let contentToAdd = eventData.content || ''
-      try {
-        // 尝试解析JSON格式的内容
-        const parsed = JSON.parse(contentToAdd)
-        if (parsed.answer) {
-          contentToAdd = parsed.answer
-          console.log('解析JSON内容:', contentToAdd)
-        }
-      } catch (e) {
-        // 如果不是JSON格式，直接使用原内容
-        console.log('非JSON格式，直接使用:', contentToAdd)
-      }
-      
-      // 如果是第一个内容片段，清除思考提示和连接中状态
-      if (messages.value[messageIndex] && 
-          (messages.value[messageIndex].content.includes('思考') || 
-           messages.value[messageIndex].content.includes('🤔') ||
-           messages.value[messageIndex].content.includes('⏳') ||
-           messages.value[messageIndex].content.includes('连接中'))) {
-        currentStreamMessage.value = ''
-        console.log('清除思考状态，重置累积内容')
-      }
-      
-      // 累加内容，实现流式显示
-      currentStreamMessage.value += contentToAdd
-      console.log('更新后累积内容长度:', currentStreamMessage.value.length)
-      
-      // 实时更新消息内容
-      if (messages.value[messageIndex]) {
-        // 只使用数组替换方法，确保Vue能检测到所有变化
-        const newMessages = [...messages.value]
-        newMessages[messageIndex] = {
-          ...newMessages[messageIndex],
-          content: currentStreamMessage.value,
-          isStreaming: true // 确保在流式过程中保持streaming状态
-        }
-        messages.value = newMessages
+      if (deltaContent) {
+        // 累加内容到最终回复（不包含任何思考提示）
+        const oldLength = currentStreamMessage.value.length
+        currentStreamMessage.value += deltaContent
+        console.log(`[DELTA事件] 累积后长度: ${currentStreamMessage.value.length} (新增: ${currentStreamMessage.value.length - oldLength})`)
         
-        // 强制触发Vue的响应式更新
-        triggerRef(messages)
+        // 实时更新消息内容
+        if (messages.value[messageIndex]) {
+          const msg = messages.value[messageIndex]
+          messages.value.splice(messageIndex, 1, { 
+            ...msg, 
+            content: currentStreamMessage.value, 
+            isStreaming: true 
+          })
+          console.log(`[DELTA事件] UI更新完成，显示长度: ${currentStreamMessage.value.length}`)
+          await nextTick()
+        }
         
-        console.log(`实时更新第${messageIndex}条消息，内容长度:`, currentStreamMessage.value.length)
+        // 优化滚动，使用防抖
+        if (scrollTimer) {
+          clearTimeout(scrollTimer)
+        }
+        scrollTimer = window.setTimeout(() => {
+          scrollToBottom()
+          scrollTimer = null
+        }, 50) // 增加防抖时间，避免过于频繁的滚动
       }
-      
-      // 优化滚动，使用更短的防抖时间以提高响应性
-      if (scrollTimer) {
-        clearTimeout(scrollTimer)
-      }
-      scrollTimer = window.setTimeout(() => {
-        scrollToBottom()
-        scrollTimer = null
-      }, 30) // 减少到30ms防抖，提高实时性
       break
       
     case 'complete':
-      console.log('回复完成:', eventData.message, 'recordId:', eventData.recordId)
+      console.log('[COMPLETE事件] 回复完成:', eventData.message, 'recordId:', eventData.recordId)
+      console.log(`[COMPLETE事件] 最终内容长度: ${currentStreamMessage.value.length}`)
       isStreaming.value = false
       
       // 清理防抖定时器
@@ -446,39 +548,27 @@ const handleSSEEvent = (eventData: any, messageIndex: number) => {
         // 获取完整的回复内容
         const completeContent = currentStreamMessage.value
         
-        // 流式输出完成后，重新设置内容以触发MessageBubble的markdown重新渲染
-        console.log('流式输出完成，准备重新渲染markdown内容')
-        console.log('完整内容长度:', completeContent.length)
-        console.log('完整内容:', completeContent)
+        console.log('[COMPLETE事件] 设置最终消息内容')
+        console.log(`[COMPLETE事件] 完整内容长度: ${completeContent.length}`)
         
-        // 使用数组替换方式确保Vue能检测到所有变化
-        const newMessages = [...messages.value]
-        newMessages[messageIndex] = {
-          ...newMessages[messageIndex],
-          content: completeContent, // 确保使用完整的流式内容
-          rid: eventData.recordId || newMessages[messageIndex].rid,
-          isStreaming: false // 明确设置为false，停止流式指示器
+        // 直接更新消息内容和状态
+        messages.value[messageIndex].content = completeContent
+        messages.value[messageIndex].isStreaming = false
+        if (eventData.recordId) {
+          messages.value[messageIndex].rid = eventData.recordId
         }
-        messages.value = newMessages
-        
-        // 强制触发Vue的响应式更新，确保MessageBubble重新渲染
-        triggerRef(messages)
         
         // 使用nextTick确保DOM更新完成后再进行下一步操作
-        nextTick(() => {
-          console.log('Vue DOM更新完成，MessageBubble应该已重新渲染markdown')
-          // 最终滚动到底部
-          scrollToBottom()
-        })
-        
-        console.log('最终消息内容长度:', completeContent.length)
-        console.log('isStreaming 已设置为 false，将触发MessageBubble的md.render重新渲染')
+        await nextTick()
+        console.log('[COMPLETE事件] Vue DOM更新完成，MessageBubble应该已重新渲染markdown')
+        // 最终滚动到底部
+        scrollToBottom()
       }
-      currentStreamMessage.value = ''
+      currentStreamMessage.value = '' // 重置累积内容
       break
       
     case 'error':
-      console.error('AI回复错误:', eventData.message || eventData.error)
+      console.error('[ERROR事件] AI回复错误:', eventData.message || eventData.error)
       const errorMsg = eventData.message || eventData.error || '未知错误'
       ElMessage.error(`AI回复出错: ${errorMsg}`)
       isStreaming.value = false
@@ -487,11 +577,11 @@ const handleSSEEvent = (eventData: any, messageIndex: number) => {
         messages.value[messageIndex].isError = true
         delete messages.value[messageIndex].isStreaming
       }
-      currentStreamMessage.value = ''
+      currentStreamMessage.value = '' // 重置累积内容
       break
       
     default:
-      console.log('未知事件类型:', eventData.type, eventData)
+      console.log('[未知事件] 类型:', eventData.type, '数据:', eventData)
   }
 }
 
@@ -534,7 +624,7 @@ const scrollToBottom = () => {
     <div class="chat-content">
       <div class="chat-layout">
         <!-- 侧边栏 -->
-        <ChatAside 
+        <ChatAside
           :sessions="sessions"
           :current-session-id="currentSessionId"
           :is-loading="isLoading"

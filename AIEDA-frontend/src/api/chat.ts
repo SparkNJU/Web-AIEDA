@@ -1,4 +1,4 @@
-import { axios, createServiceWithTimeout, getToken } from '../utils/request'
+import { axios, createServiceWithTimeout, getToken, BASE_URL } from '../utils/request'
 import { CHAT_MODULE } from './_prefix';
 
 // 创建长超时的axios实例（用于sendMessage）
@@ -50,9 +50,9 @@ export const sendMessageStream = async (data: ChatRequestVO): Promise<Response> 
   if (token) {
     headers['token'] = token
   }
-  const llm_server = "http://localhost:8080";
-  // const llm_server = ""
-  const response = await fetch(`${llm_server}${CHAT_MODULE}/messages/stream`, {
+  
+  // 使用统一的基础URL配置
+  const response = await fetch(`${BASE_URL}${CHAT_MODULE}/messages/stream`, {
     method: 'POST',
     headers: headers,
     body: JSON.stringify(data)
@@ -63,6 +63,21 @@ export const sendMessageStream = async (data: ChatRequestVO): Promise<Response> 
   }
   
   return response
+}
+
+// EventSource方式的SSE连接 - 如果后端支持GET方式
+export const createSSEConnection = (sessionId: number, userId: number, message: string): EventSource => {
+  const token = getToken()
+  const params = new URLSearchParams({
+    uid: userId.toString(),
+    sid: sessionId.toString(),
+    content: message,
+    ...(token && { token })
+  })
+  
+  // 使用GET方式建立SSE连接
+  const url = `${BASE_URL}${CHAT_MODULE}/messages/sse?${params.toString()}`
+  return new EventSource(url)
 }
 
 export const createSession = (uid: number, title: string = '新会话') => {

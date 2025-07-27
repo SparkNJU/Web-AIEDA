@@ -40,9 +40,6 @@ watch(() => props.isStreaming, (newStreaming, oldStreaming) => {
   }
 })
 
-// 不要解构props，直接使用props.xxx来保持响应式
-
-// 简化内容处理，去掉thought相关逻辑，处理answer标签，同时优化实时渲染
 const replaceRefTags = (text: string) => {
   if (!text) return ''
   // 处理引用标签

@@ -22,7 +22,7 @@ const props = defineProps<{
     >
       <el-col>
         <MessageBubble 
-          :key="`msg-${index}`"
+          :key="`msg-${msg.rid || msg.sid || 'temp'}-${index}-${msg.content?.length || 0}`"
           :content="msg.content"
           :is-user="msg.direction"
           :is-streaming="msg.isStreaming"

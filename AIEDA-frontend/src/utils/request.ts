@@ -1,18 +1,19 @@
 import axios from 'axios'
 
+// 导出基础URL配置，方便其他地方使用
+export const BASE_URL = "http://localhost:8080"
+// export const BASE_URL = "http://47.245.105.147:8080"
+// export const BASE_URL = ""
+
 const service = axios.create({
-    baseURL: "http://localhost:8080",
-    // baseURL: "http://47.245.105.147:8080",
-    // baseURL: "",
+    baseURL: BASE_URL,
     timeout: 30000 // 默认30秒超时
 })
 
 // 创建一个支持自定义超时的axios实例
 const createServiceWithTimeout = (timeout: number) => {
     const customService = axios.create({
-        baseURL: "http://localhost:8080",
-        // baseURL: "http://47.245.105.147:8080",
-        // baseURL: "",
+        baseURL: BASE_URL,
         timeout: timeout
     })
 
