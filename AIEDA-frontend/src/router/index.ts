@@ -5,7 +5,6 @@ import Login from '../views/user/Login.vue'
 import Register from '../views/user/Register.vue'
 import Profile from '../views/user/Profile.vue'
 import ChatPage from '../views/chat/ChatPage.vue'
-import Llm from '../views/llm/llm.vue'
 import { ElMessage } from 'element-plus'
 
 const router = createRouter({
@@ -49,12 +48,6 @@ const router = createRouter({
           component: ChatPage,
           meta: { title: '智能助手', requiresAuth: true }
         },
-        {
-          path: 'llm',
-          name: 'Llm',
-          component: Llm,
-          meta: { title: 'IGBT网表生成器', requiresAuth: false }
-        }
       ]
     },
     {
