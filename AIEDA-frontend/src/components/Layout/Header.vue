@@ -76,11 +76,19 @@ watch(
 .header {
   width: 100%;
   display: flex;
-  justify-content: space-between;
   align-items: center;
   padding: 1rem 2rem;
   background-color: #fff;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.nav {
+  margin-left: 2rem;
+  flex: 1;
+}
+
+.auth-buttons {
+  margin-left: auto;
 }
 
 .logo h1 {
@@ -112,10 +120,6 @@ watch(
 
 .nav a:hover, .nav a.router-link-active {
   color: rgb(102, 8, 116);
-}
-
-.auth-buttons {
-  display: flex;
 }
 
 .auth-buttons button {
