@@ -7,7 +7,6 @@ const props = defineProps<{
   inputMessage: string
   isLoading: boolean
   inputDisabled: boolean
-  isStreamMode?: boolean
   isStreaming?: boolean
 }>()
 
@@ -69,9 +68,6 @@ const sendMessage = () => {
     <div class="input-footer">
       <div class="input-tips">
         按 Enter 发送，Shift + Enter 换行
-        <span v-if="isStreamMode" class="stream-hint">
-          · 流式模式：AI将实时回复
-        </span>
       </div>
     </div>
   </div>
@@ -116,11 +112,6 @@ const sendMessage = () => {
   text-align: center;
   margin: 0;
   padding: 0;
-}
-
-.stream-hint {
-  color: rgb(102, 8, 116);
-  font-weight: 500;
 }
 
 :deep(.el-textarea__inner) {

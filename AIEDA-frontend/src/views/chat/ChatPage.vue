@@ -2,14 +2,14 @@
 <script setup lang="ts">
 import { ref, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElSwitch } from 'element-plus'
+import { ElMessage } from 'element-plus'
 // 导入子组件
 import ChatAside from './ChatAside.vue'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
 import WelcomeCard from './WelcomeCard.vue'
 // 导入API
-import { createSession, getSessionRecords, getUserSessions, sendMessage, sendMessageStream, createSSEConnection, updateSessionTitle, deleteSession } from '../../api/chat'
+import { createSession, getSessionRecords, getUserSessions, sendMessageStream, updateSessionTitle, deleteSession } from '../../api/chat'
 
 // 类型定义
 export type SessionRecord = {
@@ -40,12 +40,9 @@ const sessions = ref<SessionRecord[]>([])
 const messages = ref<ChatRecord[]>([])
 const inputMessage = ref('')
 const isLoading = ref(false)
-const isStreamMode = ref(true) // 流式输出开关，默认开启
-const useEventSource = ref(false) // 是否使用EventSource方式，默认使用fetch
 const currentStreamMessage = ref('') // 当前流式消息内容
 const isStreaming = ref(false) // 是否正在流式输出
 let scrollTimer: number | null = null // 滚动防抖定时器
-let currentEventSource: EventSource | null = null // 当前的EventSource连接
 
 const suggestionQuestions = [
 "AI 如何提升 EDA 全链路仿真性能？有实测吗？",
@@ -68,12 +65,8 @@ onMounted(() => {
   loadUserSessions()
 })
 
-// 组件卸载时清理EventSource连接
+// 组件卸载时清理
 onUnmounted(() => {
-  if (currentEventSource) {
-    currentEventSource.close()
-    currentEventSource = null
-  }
   if (scrollTimer) {
     clearTimeout(scrollTimer)
     scrollTimer = null
@@ -203,143 +196,12 @@ const handleSendMessage = async (messageToSend: string) => {
   scrollToBottom()
   updateSessionTime()
 
-  // 根据流式模式选择不同的发送方式
-  if (isStreamMode.value) {
-    await handleSendMessageStream(messageToSend)
-  } else {
-    await handleSendMessageNormal(messageToSend)
-  }
+  // 使用流式输出发送消息
+  await handleSendMessageStream(messageToSend)
 }
 
-// 普通消息发送（原有逻辑）
-const handleSendMessageNormal = async (messageToSend: string) => {
-  isLoading.value = true
-  try {
-    const res = await sendMessage({
-      uid: userId.value,
-      content: messageToSend,
-      sid: currentSessionId.value
-    })
-    
-    if (res.data.code === '200') {
-      // 添加AI回复到界面
-      const aiReply = res.data.data
-      messages.value.push({
-        rid: aiReply.rid,
-        sid: aiReply.sid,
-        direction: aiReply.direction,
-        content: aiReply.content,
-        sequence: aiReply.sequence,
-        type: aiReply.type,
-        createTime: aiReply.createTime
-      })
-      scrollToBottom()
-    } else {
-      ElMessage.error(res.data.message || '发送消息失败')
-    }
-  } catch (error) {
-    console.error('发送消息失败:', error)
-    ElMessage.error('发送消息失败')
-  } finally {
-    isLoading.value = false
-  }
-}
-
-// SSE流式消息发送
+// 流式消息发送
 const handleSendMessageStream = async (messageToSend: string) => {
-  // 根据配置选择使用EventSource还是fetch方式
-  if (useEventSource.value) {
-    await handleSendMessageWithEventSource(messageToSend)
-  } else {
-    await handleSendMessageWithFetch(messageToSend)
-  }
-}
-
-// 使用EventSource方式发送消息（标准SSE模式）
-const handleSendMessageWithEventSource = async (messageToSend: string) => {
-  isStreaming.value = true
-  currentStreamMessage.value = ''
-  
-  // 添加AI消息占位符
-  const aiMessageIndex = messages.value.length
-  messages.value.push({
-    content: '⏳ 连接中...',
-    direction: false,
-    sid: currentSessionId.value,
-    isStreaming: true
-  })
-  scrollToBottom()
-
-  try {
-    // 关闭之前的连接
-    if (currentEventSource) {
-      currentEventSource.close()
-    }
-
-    // 创建新的EventSource连接
-    currentEventSource = createSSEConnection(currentSessionId.value, userId.value, messageToSend)
-
-    // 监听连接打开
-    currentEventSource.onopen = (event) => {
-      console.log('EventSource连接已建立:', event)
-    }
-
-    // 监听消息事件
-    currentEventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        console.log('EventSource收到消息:', data)
-        handleSSEEvent(data, aiMessageIndex)
-      } catch (e) {
-        console.warn('解析EventSource数据失败:', event.data, e)
-      }
-    }
-
-    // 监听自定义事件类型
-    ;['start', 'delta', 'message', 'complete', 'error'].forEach(eventType => {
-      currentEventSource!.addEventListener(eventType, (event: any) => {
-        try {
-          const data = JSON.parse(event.data)
-          console.log(`EventSource收到${eventType}事件:`, data)
-          handleSSEEvent(data, aiMessageIndex)
-        } catch (e) {
-          console.warn(`解析EventSource ${eventType}事件数据失败:`, event.data, e)
-        }
-      })
-    })
-
-    // 监听连接错误
-    currentEventSource.onerror = (event) => {
-      console.error('EventSource连接错误:', event)
-      ElMessage.error('连接失败，请检查网络或稍后重试')
-      isStreaming.value = false
-      
-      // 移除失败的AI消息
-      if (messages.value[aiMessageIndex]) {
-        messages.value.splice(aiMessageIndex, 1)
-      }
-      
-      // 关闭连接
-      if (currentEventSource) {
-        currentEventSource.close()
-        currentEventSource = null
-      }
-    }
-
-  } catch (error) {
-    console.error('创建EventSource连接失败:', error)
-    ElMessage.error('连接失败，请检查网络或稍后重试')
-    isStreaming.value = false
-    
-    // 移除失败的AI消息
-    if (messages.value[aiMessageIndex]) {
-      messages.value.splice(aiMessageIndex, 1)
-    }
-  }
-}
-
-// 使用fetch方式发送消息（支持POST请求）
-const handleSendMessageWithFetch = async (messageToSend: string) => {
   isStreaming.value = true
   currentStreamMessage.value = ''
   
@@ -640,18 +502,6 @@ const scrollToBottom = () => {
           <div class="chat-main-header" v-if="currentSessionId !== 0">
             <div class="header-content">
               <h2>{{ currentSessionTitle || '新会话' }}</h2>
-              <div class="header-controls">
-                <div class="stream-toggle">
-                  <el-switch
-                    v-model="isStreamMode"
-                    :disabled="isLoading || isStreaming"
-                    active-text="流式输出"
-                    inactive-text="普通模式"
-                    active-color="#660874"
-                    size="small"
-                  />
-                </div>
-              </div>
             </div>
           </div>
 
@@ -674,7 +524,6 @@ const scrollToBottom = () => {
             :input-message="inputMessage"
             :is-loading="isLoading"
             :input-disabled="inputDisabled"
-            :is-stream-mode="isStreamMode"
             :is-streaming="isStreaming"
             @update:input-message="(val: string) => inputMessage = val"
             @send-message="handleSendMessage"
@@ -728,7 +577,7 @@ const scrollToBottom = () => {
 
 .header-content {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
 }
 
@@ -737,19 +586,6 @@ const scrollToBottom = () => {
   color: rgb(102, 8, 116);
   font-size: 1.2rem;
   font-weight: 500;
-}
-
-.header-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.stream-toggle {
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-  color: #666;
 }
 
 .chat-main-content {
