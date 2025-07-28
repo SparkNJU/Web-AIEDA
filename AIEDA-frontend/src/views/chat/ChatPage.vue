@@ -33,7 +33,7 @@ export type ChatRecord = {
 
 // 核心数据
 const router = useRouter()
-const userId = ref<number>(1) // 固定使用用户ID 1
+const userId = ref<number>() 
 const currentSessionId = ref<number>(0)
 const currentSessionTitle = ref('')
 const sessions = ref<SessionRecord[]>([])
@@ -76,6 +76,7 @@ onUnmounted(() => {
 // 加载用户会话列表
 const loadUserSessions = async () => {
   try {
+    userId.value = Number(sessionStorage.getItem('uid'));
     console.log('正在加载用户会话，用户ID:', userId.value)
     const res = await getUserSessions(userId.value)
     console.log('获取会话响应:', res.data)
