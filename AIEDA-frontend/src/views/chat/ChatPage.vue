@@ -452,8 +452,20 @@ const updateSessionTime = () => {
   const session = sessions.value.find(s => s.sid === currentSessionId.value)
   if (!session) return
   
-  session.updateTime = new Date().toISOString()
-  sessions.value = [...sessions.value].sort((a, b) => b.updateTime.localeCompare(a.updateTime))
+  // 使用时间戳确保总是最新，然后转换为ISO字符串
+  const now = new Date()
+  const newTime = now.toISOString()
+  // console.log(`[会话排序] 更新会话${currentSessionId.value}时间: ${session.updateTime} -> ${newTime}`)
+  session.updateTime = newTime
+  
+  // 不使用字符串比较，而是使用时间戳比较
+  sessions.value = [...sessions.value].sort((a, b) => {
+    const timeA = new Date(a.updateTime).getTime()
+    const timeB = new Date(b.updateTime).getTime()
+    return timeB - timeA // 降序排列，最新的在前面
+  })
+  
+  // console.log('[会话排序] 排序后会话列表:', sessions.value.map(s => ({sid: s.sid, title: s.title, updateTime: s.updateTime})))
   
   // 首次发送消息时更新标题
   if (messages.value.length === 1) {
