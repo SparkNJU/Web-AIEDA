@@ -46,15 +46,6 @@ public class ChatController {
         return Response.buildSuccess(records);
     }
 
-    @Operation(summary = "发送消息并获取AI回复", description = "向指定会话发送用户消息，并获取AI回复")
-    @PostMapping("/messages")
-    public Response<RecordVO> sendMessage(
-            @Parameter(description = "聊天消息请求对象", required = true)
-            @RequestBody ChatRequestVO request) {
-        RecordVO replyRecord = chatService.sendMessage(request.getUid(), request.getSid(), request.getContent());
-        return Response.buildSuccess(replyRecord);
-    }
-
     @Operation(summary = "发送消息并流式获取AI回复", description = "向指定会话发送用户消息，并通过SSE流式获取AI回复")
     @PostMapping(value = "/messages/stream", produces = "text/event-stream")
     public SseEmitter sendMessageSSE(

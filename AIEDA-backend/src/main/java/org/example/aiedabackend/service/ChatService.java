@@ -23,11 +23,6 @@ public interface ChatService {
     List<RecordVO> getRecords(Integer sid);
 
     /**
-     * 发送消息，并接收AI回复
-     */
-    RecordVO sendMessage(Integer uid, Integer sid, String content);
-
-    /**
      * 发送消息，并通过SSE流式返回AI回复
      */
     SseEmitter sendMessageSSE(Integer uid, Integer sid, String content);
