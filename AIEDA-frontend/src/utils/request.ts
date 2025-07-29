@@ -2,7 +2,6 @@ import axios from 'axios'
 
 // 导出基础URL配置，方便其他地方使用
 export const BASE_URL = "http://localhost:8080"
-// export const BASE_URL = "http://47.245.105.147:8080"
 // export const BASE_URL = ""
 
 const service = axios.create({

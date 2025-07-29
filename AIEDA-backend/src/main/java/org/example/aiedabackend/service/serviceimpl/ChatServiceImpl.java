@@ -388,35 +388,38 @@ public class ChatServiceImpl implements ChatService {
                 if (!delta.isEmpty()) {
                     fullDelta.append(delta);
                     
-                    // 直接发送delta内容，不需要等待完整的finish标签
-                    if (!delta.trim().isEmpty()) {
-                        // 如果delta包含JSON格式的开始或结束，进行适当处理
-                        String cleanDelta = delta;
-                        
-                        // 如果包含finish标签，尝试提取内部内容
-                        if (delta.contains("<finish>") || delta.contains("</finish>")) {
-                            String extracted = extractContentFromDelta(fullDelta.toString());
-                            if (!extracted.isEmpty() && extracted.length() > aiReply.length()) {
-                                cleanDelta = extracted.substring(aiReply.length());
-                            } else {
-                                cleanDelta = ""; // 已处理过的内容，不重复发送
-                            }
-                        } else if (!delta.contains("<") && !delta.contains(">") && !delta.contains("{") && !delta.contains("}")) {
-                            // 如果是纯文本内容，直接使用
-                            cleanDelta = delta;
+                    // 检查是否包含完整的<finish>开始标签
+                    String fullText = fullDelta.toString();
+
+                    // 如果还没有找到完整的<finish>标签，继续等待
+                    if (!fullText.contains("<finish>")) {
+                        System.out.println("等待完整的<finish>标签...");
+                        return false; // 继续等待
+                    }
+                    
+                    // 找到<finish>标签，开始处理内容
+                    int finishStartIndex = fullText.indexOf("<finish>");
+                    if (finishStartIndex != -1) {
+                        // 提取<finish>标签后的内容
+                        String contentAfterFinish = fullText.substring(finishStartIndex + 8); // 8是"<finish>"的长度
+
+                        // 检查是否有</finish>标签，如果有则去掉
+                        int finishEndIndex = contentAfterFinish.indexOf("</finish>");
+                        String actualContent;
+                        if (finishEndIndex != -1) {
+                            actualContent = contentAfterFinish.substring(0, finishEndIndex);
                         } else {
-                            // 如果包含JSON片段，尝试清理
-                            cleanDelta = delta
-                                .replaceAll("\\{\"answer\":\"?", "")
-                                .replaceAll("\"?\\}$", "")
-                                .trim();
+                            actualContent = contentAfterFinish;
                         }
                         
-                        // 只发送一次处理后的内容
-                        if (!cleanDelta.isEmpty()) {
-                            aiReply.append(cleanDelta);
-                            sendDeltaToFrontend(emitter, cleanDelta);
-                            System.out.println("发送处理后的delta内容: " + cleanDelta);
+                        // 计算新增的内容（避免重复发送）
+                        if (actualContent.length() > aiReply.length()) {
+                            String newContent = actualContent.substring(aiReply.length());
+                            if (!newContent.isEmpty()) {
+                                aiReply.append(newContent);
+                                sendDeltaToFrontend(emitter, newContent);
+                                System.out.println("发送新增内容: " + newContent);
+                            }
                         }
                     }
                 }
@@ -568,7 +571,7 @@ public class ChatServiceImpl implements ChatService {
             // 去除可能的JSON格式字符和标签
             String cleanedContent = deltaStr
                 .replaceAll("</?finish>", "")  // 移除finish标签
-                .replaceAll("\\{\"answer\":\"?", "")  // 移除answer开始部分
+                .replaceAll("\\{\"answer\":\"?", "")  // 秘移除answer开始部分
                 .replaceAll("\"?\\}$", "")  // 移除结尾的引号和大括号
                 .trim();
                 
