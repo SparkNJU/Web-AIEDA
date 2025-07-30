@@ -214,8 +214,8 @@ public class ChatServiceImpl implements ChatService {
     private String getAIStreamResponse(SseEmitter emitter, String sessionId, StringBuilder aiReply) throws Exception {
         String sseStreamUrl = "http://localhost:8000/api/v1/stream";
         boolean generationFinished = false;
-        boolean foundFinishStart = false;
-        StringBuilder fullDelta = new StringBuilder();
+        boolean[] foundFinishStart = {false}; // 使用数组来保持状态
+        StringBuilder fullDelta = new StringBuilder(); // 用于累积不完整的标签
 
         // 建立SSE连接
         URL url = new URL(sseStreamUrl);
@@ -245,12 +245,6 @@ public class ChatServiceImpl implements ChatService {
                         // 解析并处理事件数据，立即转发到前端
                         generationFinished = processSSEEventData(emitter, jsonData, sessionId,
                             aiReply, fullDelta, foundFinishStart);
-
-                        // 更新foundFinishStart状态
-                        if (!foundFinishStart && fullDelta.toString().contains("<finish>")) {
-                            foundFinishStart = true;
-                            System.out.println("发现开始标签，开始处理内容");
-                        }
 
                     } catch (Exception parseError) {
                         log.warn("解析SSE事件数据失败: {}", jsonData, parseError);
@@ -287,7 +281,7 @@ public class ChatServiceImpl implements ChatService {
      * 处理SSE事件数据
      */
     private boolean processSSEEventData(SseEmitter emitter, String jsonData, String sessionId,
-                                       StringBuilder aiReply, StringBuilder fullDelta, boolean foundFinishStart) throws Exception {
+                                       StringBuilder aiReply, StringBuilder fullDelta, boolean[] foundFinishStart) throws Exception {
 
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         @SuppressWarnings("unchecked")
@@ -331,7 +325,7 @@ public class ChatServiceImpl implements ChatService {
      * 处理单个事件
      */
     private boolean processSingleEvent(SseEmitter emitter, java.util.Map<String, Object> event, String sessionId,
-                                     StringBuilder aiReply, StringBuilder fullDelta, boolean foundFinishStart) throws Exception {
+                                     StringBuilder aiReply, StringBuilder fullDelta, boolean[] foundFinishStart) throws Exception {
 
         String eventSessionId = (String) event.get("session_id");
         String userId = (String) event.get("user_id");
@@ -351,25 +345,6 @@ public class ChatServiceImpl implements ChatService {
                 String message = (String) result.get("message");
                 if ("FINISH".equals(message)) {
                     log.info("检测到result.message=FINISH，AI回复生成完成");
-                    
-                    // 从result.data中提取最终答案
-                    @SuppressWarnings("unchecked")
-                    var resultData = (java.util.Map<String, Object>) result.get("data");
-                    if (resultData != null) {
-                        Object answer = resultData.get("answer");
-                        if (answer != null) {
-                            String finalAnswer = extractContentFromDelta(answer.toString());
-                            if (!finalAnswer.isEmpty() && finalAnswer.length() > aiReply.length()) {
-                                String newContent = finalAnswer.substring(aiReply.length());
-                                if (!newContent.isEmpty()) {
-                                    aiReply.append(newContent);
-                                    sendDeltaToFrontend(emitter, newContent);
-                                    System.out.println("发送最终答案内容: " + newContent);
-                                }
-                            }
-                        }
-                    }
-                    
                     return true; // 生成完成
                 }
             }
@@ -386,47 +361,139 @@ public class ChatServiceImpl implements ChatService {
                 System.out.println("Delta内容: " + delta);
 
                 if (!delta.isEmpty()) {
-                    fullDelta.append(delta);
-                    
-                    // 检查是否包含完整的<finish>开始标签
-                    String fullText = fullDelta.toString();
-
-                    // 如果还没有找到完整的<finish>标签，继续等待
-                    if (!fullText.contains("<finish>")) {
-                        System.out.println("等待完整的<finish>标签...");
-                        return false; // 继续等待
-                    }
-                    
-                    // 找到<finish>标签，开始处理内容
-                    int finishStartIndex = fullText.indexOf("<finish>");
-                    if (finishStartIndex != -1) {
-                        // 提取<finish>标签后的内容
-                        String contentAfterFinish = fullText.substring(finishStartIndex + 8); // 8是"<finish>"的长度
-
-                        // 检查是否有</finish>标签，如果有则去掉
-                        int finishEndIndex = contentAfterFinish.indexOf("</finish>");
-                        String actualContent;
-                        if (finishEndIndex != -1) {
-                            actualContent = contentAfterFinish.substring(0, finishEndIndex);
-                        } else {
-                            actualContent = contentAfterFinish;
-                        }
-                        
-                        // 计算新增的内容（避免重复发送）
-                        if (actualContent.length() > aiReply.length()) {
-                            String newContent = actualContent.substring(aiReply.length());
-                            if (!newContent.isEmpty()) {
-                                aiReply.append(newContent);
-                                sendDeltaToFrontend(emitter, newContent);
-                                System.out.println("发送新增内容: " + newContent);
-                            }
-                        }
+                    // 处理delta内容，过滤finish标签但保留其他标签
+                    String processedDelta = processAndFilterDelta(delta, fullDelta);
+                    if (!processedDelta.isEmpty()) {
+                        // 发送处理后的内容到前端
+                        sendDeltaToFrontend(emitter, processedDelta);
+                        aiReply.append(processedDelta);
+                        System.out.println("发送到前端的内容: " + processedDelta);
                     }
                 }
             }
         }
 
         return false;
+    }
+
+    /**
+     * 处理并过滤delta内容
+     * 等待完整标签出现，过滤finish标签，保留其他标签
+     */
+    private String processAndFilterDelta(String delta, StringBuilder fullDelta) {
+        fullDelta.append(delta);
+        String accumulated = fullDelta.toString();
+        StringBuilder result = new StringBuilder();
+        StringBuilder remaining = new StringBuilder();
+        
+        int i = 0;
+        while (i < accumulated.length()) {
+            char c = accumulated.charAt(i);
+            
+            if (c == '<') {
+                // 寻找完整的标签
+                int tagStart = i;
+                int tagEnd = findCompleteTag(accumulated, i);
+                
+                if (tagEnd == -1) {
+                    // 标签不完整，保留到remaining中等待更多内容
+                    remaining.append(accumulated.substring(i));
+                    break;
+                } else {
+                    // 找到完整标签
+                    String tag = accumulated.substring(tagStart, tagEnd + 1);
+                    
+                    // 检查是否是finish标签
+                    if (tag.matches("(?i)</?finish>")) {
+                        // 是finish标签，跳过不添加到结果中
+                        System.out.println("过滤finish标签: " + tag);
+                    } else {
+                        // 不是finish标签，添加到结果中
+                        result.append(tag);
+                        System.out.println("保留标签: " + tag);
+                    }
+                    i = tagEnd + 1;
+                }
+            } else {
+                // 普通字符，直接添加
+                result.append(c);
+                i++;
+            }
+        }
+        
+        // 更新fullDelta为剩余未处理的内容
+        fullDelta.setLength(0);
+        fullDelta.append(remaining);
+        
+        return result.toString();
+    }
+
+    /**
+     * 寻找完整标签的结束位置
+     */
+    private int findCompleteTag(String text, int startPos) {
+        if (startPos >= text.length() || text.charAt(startPos) != '<') {
+            return -1;
+        }
+        
+        // 寻找对应的'>'
+        int pos = startPos + 1;
+        boolean inQuotes = false;
+        char quoteChar = 0;
+        
+        while (pos < text.length()) {
+            char c = text.charAt(pos);
+            
+            if (!inQuotes && (c == '"' || c == '\'')) {
+                inQuotes = true;
+                quoteChar = c;
+            } else if (inQuotes && c == quoteChar) {
+                inQuotes = false;
+            } else if (!inQuotes && c == '>') {
+                return pos; // 找到标签结束
+            }
+            
+            pos++;
+        }
+        
+        return -1; // 标签不完整
+    }
+
+    /**
+     * 处理finish标签内的内容，清理JSON格式等
+     */
+    private String processFinishContent(String content) {
+        if (content == null || content.trim().isEmpty()) {
+            return "";
+        }
+
+        // 尝试解析JSON格式的内容
+        try {
+            // 检查是否是JSON格式
+            if (content.trim().startsWith("{") && content.trim().endsWith("}")) {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> json = mapper.readValue(content.trim(), java.util.Map.class);
+
+                Object answer = json.get("answer");
+                if (answer != null) {
+                    return answer.toString();
+                }
+            }
+
+            // 如果不是完整的JSON，尝试提取JSON片段
+            String cleaned = content
+                .replaceAll("\\{\"answer\":\"?", "")  // 移除answer开始部分
+                .replaceAll("\"?\\}$", "")  // 移除结尾的引号和大括号
+                .trim();
+
+            return cleaned;
+
+        } catch (Exception e) {
+            // JSON解析失败，返回清理后的文本
+            System.out.println("JSON解析失败，返回清理后的文本: " + content);
+            return content.trim();
+        }
     }
 
     /**
@@ -571,7 +638,7 @@ public class ChatServiceImpl implements ChatService {
             // 去除可能的JSON格式字符和标签
             String cleanedContent = deltaStr
                 .replaceAll("</?finish>", "")  // 移除finish标签
-                .replaceAll("\\{\"answer\":\"?", "")  // 秘移除answer开始部分
+                .replaceAll("\\{\"answer\":\"?", "")  // 秼除answer开始部分
                 .replaceAll("\"?\\}$", "")  // 移除结尾的引号和大括号
                 .trim();
                 

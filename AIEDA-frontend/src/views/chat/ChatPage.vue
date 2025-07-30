@@ -33,7 +33,7 @@ export type ChatRecord = {
 
 // 核心数据
 const router = useRouter()
-const userId = ref<number>() 
+const userId = ref<number>(0) 
 const currentSessionId = ref<number>(0)
 const currentSessionTitle = ref('')
 const sessions = ref<SessionRecord[]>([])
