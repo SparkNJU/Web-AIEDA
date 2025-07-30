@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ElCard, ElButton } from 'element-plus'
+import { ElCard, ElMenu, ElMenuItem } from 'element-plus'
 
 // 接收参数
 const props = defineProps<{
@@ -24,17 +24,21 @@ const { suggestions } = props
         
         <div class="suggestions">
           <h3>💡 推荐问题</h3>
-          <div class="suggestion-grid">
-            <el-button 
+          <el-menu 
+            class="suggestion-menu" 
+            mode="vertical"
+            :default-active="''"
+            @select="(index: string) => emit('insert-question', suggestions[parseInt(index)])"
+          >
+            <el-menu-item 
               v-for="(suggestion, index) in suggestions" 
               :key="index"
-              class="suggestion-btn"
-              plain
-              @click="emit('insert-question', suggestion)"
+              :index="index.toString()"
+              class="suggestion-item"
             >
               {{ suggestion }}
-            </el-button>
-          </div>
+            </el-menu-item>
+          </el-menu>
         </div>
       </div>
     </el-card>
@@ -102,43 +106,53 @@ const { suggestions } = props
   font-weight: 500;
 }
 
-.suggestion-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); /* 使用grid布局，自适应列数 */
-  gap: 0.8rem;
+.suggestion-menu {
+  background: transparent;
+  border: none;
   width: 100%;
+  max-width: 600px;
   margin: 0 auto;
 }
 
-.suggestion-btn {
-  text-align: left;
-  white-space: normal;
-  height: auto;
-  padding: 14px 18px; /* 稍微减少内边距 */
-  border-color: rgba(102, 8, 116, 0.3);
-  color: rgb(102, 8, 116);
+.suggestion-item {
+  height: 60px !important; /* 固定高度确保所有项目一致 */
+  line-height: 60px;
+  text-align: center;
+  margin-bottom: 0.8rem;
+  border: 1px solid rgba(102, 8, 116, 0.3);
   border-radius: 8px;
+  color: rgb(102, 8, 116) !important;
+  background-color: transparent;
   transition: all 0.2s ease;
-  width: 100%; /* 确保所有按钮宽度一致 */
-  min-height: 48px; /* 稍微减少最小高度 */
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  font-size: 0.9rem; /* 稍微减小字体 */
-  line-height: 1.4;
+  justify-content: center;
+  font-size: 0.9rem;
+  white-space: normal;
+  padding: 14px 18px;
 }
 
-.suggestion-btn:hover {
-  background-color: rgba(102, 8, 116, 0.08);
+.suggestion-item:hover {
+  background-color: rgba(102, 8, 116, 0.08) !important;
   border-color: rgb(102, 8, 116);
-  color: rgb(102, 8, 116);
+  color: rgb(102, 8, 116) !important;
   transform: translateY(-1px);
+}
+
+.suggestion-item:last-child {
+  margin-bottom: 0;
+}
+
+/* 移除Element Plus默认样式 */
+.suggestion-menu .el-menu-item.is-active {
+  background-color: rgba(102, 8, 116, 0.08) !important;
+  color: rgb(102, 8, 116) !important;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .suggestion-grid {
-    grid-template-columns: 1fr; /* 小屏幕时单列显示 */
+  .suggestion-menu {
+    max-width: 100%; /* 小屏幕时使用全宽 */
   }
   
   .welcome-container {
@@ -147,6 +161,12 @@ const { suggestions } = props
   
   .welcome-content {
     padding: 16px;
+  }
+  
+  .suggestion-item {
+    height: 50px !important; /* 小屏幕时稍微减少高度 */
+    line-height: 50px;
+    font-size: 0.85rem;
   }
 }
 </style>
