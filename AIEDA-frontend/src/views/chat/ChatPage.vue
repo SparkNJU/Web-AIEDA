@@ -37,11 +37,18 @@ const userId = ref<number>(0)
 const currentSessionId = ref<number>(0)
 const currentSessionTitle = ref('')
 const sessions = ref<SessionRecord[]>([])
-const messages = ref<ChatRecord[]>([])
-const inputMessage = ref('')
+
+// 为每个会话独立管理状态
+const sessionStates = ref<Record<number, {
+  messages: ChatRecord[]
+  inputMessage: string
+  isStreaming: boolean
+  currentStreamMessage: string
+  streamingMessageIndex?: number
+}>>({})
+
 const isLoading = ref(false)
-const currentStreamMessage = ref('') // 当前流式消息内容
-const isStreaming = ref(false) // 是否正在流式输出
+const tempInputMessage = ref('') // 临时输入消息，用于没有会话时的输入
 let scrollTimer: number | null = null // 滚动防抖定时器
 
 const suggestionQuestions = [
@@ -52,6 +59,49 @@ const suggestionQuestions = [
 ];
 
 // 计算属性
+const currentSessionState = computed(() => {
+  const sessionId = currentSessionId.value
+  if (sessionId === 0) {
+    return {
+      messages: [],
+      inputMessage: '',
+      isStreaming: false,
+      currentStreamMessage: '',
+      streamingMessageIndex: undefined
+    }
+  }
+  if (!sessionStates.value[sessionId]) {
+    sessionStates.value[sessionId] = {
+      messages: [],
+      inputMessage: '',
+      isStreaming: false,
+      currentStreamMessage: '',
+      streamingMessageIndex: undefined
+    }
+  }
+  return sessionStates.value[sessionId]
+})
+
+const messages = computed(() => currentSessionState.value.messages)
+const inputMessage = computed({
+  get: () => {
+    // 如果没有当前会话，返回临时输入值
+    if (currentSessionId.value === 0) {
+      return tempInputMessage.value
+    }
+    return currentSessionState.value.inputMessage
+  },
+  set: (value: string) => {
+    if (currentSessionId.value !== 0) {
+      currentSessionState.value.inputMessage = value
+    } else {
+      // 没有会话时，保存到临时变量
+      tempInputMessage.value = value
+    }
+  }
+})
+const isStreaming = computed(() => currentSessionState.value.isStreaming)
+
 const showWelcomeCard = computed(() => {
   return currentSessionId.value === 0 || (currentSessionId.value !== 0 && messages.value.length === 0)
 })
@@ -110,7 +160,14 @@ const handleCreateSession = async () => {
       sessions.value.unshift(newSession)
       currentSessionId.value = newSession.sid
       currentSessionTitle.value = newSession.title
-      messages.value = []
+      // 为新会话初始化状态
+      sessionStates.value[newSession.sid] = {
+        messages: [],
+        inputMessage: '',
+        isStreaming: false,
+        currentStreamMessage: '',
+        streamingMessageIndex: undefined
+      }
     } else {
       ElMessage.error(res.data.message || '创建会话失败')
     }
@@ -125,20 +182,59 @@ const handleCreateSession = async () => {
 const handleSelectSession = (sessionId: number) => {
   if (currentSessionId.value === sessionId) return
   currentSessionId.value = sessionId
-  loadChatHistory(sessionId)
-  currentSessionTitle.value = sessions.value.find(s => s.sid === sessionId)?.title || ''
+  
+  // 检查目标会话是否正在流式回复中
+  const targetSessionState = sessionStates.value[sessionId]
+  if (targetSessionState && targetSessionState.isStreaming) {
+    // 如果正在流式回复，不重新加载历史记录，直接切换到该会话
+    console.log(`[会话切换] 会话${sessionId}正在流式回复中，跳过历史记录加载`)
+    currentSessionTitle.value = sessions.value.find(s => s.sid === sessionId)?.title || ''
+    // 滚动到底部以显示最新内容
+    scrollToBottom()
+  } else if (targetSessionState && targetSessionState.messages.length > 0) {
+    // 如果会话状态已存在且有消息，也不重新加载历史记录
+    console.log(`[会话切换] 会话${sessionId}已有消息缓存，跳过历史记录加载`)
+    currentSessionTitle.value = sessions.value.find(s => s.sid === sessionId)?.title || ''
+    scrollToBottom()
+  } else {
+    // 如果没有在流式回复且没有消息缓存，正常加载历史记录
+    loadChatHistory(sessionId)
+    currentSessionTitle.value = sessions.value.find(s => s.sid === sessionId)?.title || ''
+  }
 }
 
 const loadChatHistory = async (sessionId: number) => {
+  // 检查会话是否正在流式回复中
+  if (sessionStates.value[sessionId] && sessionStates.value[sessionId].isStreaming) {
+    console.log(`[历史记录加载] 会话${sessionId}正在流式回复中，跳过历史记录加载`)
+    return
+  }
+
   isLoading.value = true
   try {
     const res = await getSessionRecords(sessionId)
     if (res.data.code === '200') {
-      messages.value = res.data.data.map((msg: ChatRecord) => ({
-        ...msg,
-        content: msg.content
-      }))
-      scrollToBottom()
+      // 确保会话状态存在
+      if (!sessionStates.value[sessionId]) {
+        sessionStates.value[sessionId] = {
+          messages: [],
+          inputMessage: '',
+          isStreaming: false,
+          currentStreamMessage: '',
+          streamingMessageIndex: undefined
+        }
+      }
+      
+      // 再次检查是否在流式回复中（防止加载过程中状态发生变化）
+      if (!sessionStates.value[sessionId].isStreaming) {
+        sessionStates.value[sessionId].messages = res.data.data.map((msg: ChatRecord) => ({
+          ...msg,
+          content: msg.content
+        }))
+        scrollToBottom()
+      } else {
+        console.log(`[历史记录加载] 会话${sessionId}在加载过程中开始流式回复，取消历史记录更新`)
+      }
     } else {
       ElMessage.error(res.data.message || '获取聊天历史失败')
     }
@@ -171,10 +267,13 @@ const handleDeleteSession = async (sessionId: number) => {
     const res = await deleteSession(sessionId, userId.value)
     if (res.data.code === '200') {
       sessions.value = sessions.value.filter(s => s.sid !== sessionId)
+      // 删除会话状态
+      if (sessionStates.value[sessionId]) {
+        delete sessionStates.value[sessionId]
+      }
       if (currentSessionId.value === sessionId) {
         currentSessionId.value = 0
         currentSessionTitle.value = ''
-        messages.value = []
       }
     } else {
       ElMessage.error(res.data.message || '删除会话失败')
@@ -194,15 +293,23 @@ const handleSendMessage = async (messageToSend: string) => {
     if (currentSessionId.value === 0) {
       return
     }
+    // 会话创建成功后，将临时输入消息转移到新会话
+    if (tempInputMessage.value) {
+      sessionStates.value[currentSessionId.value].inputMessage = tempInputMessage.value
+      tempInputMessage.value = ''
+    }
   }
 
+  const sessionId = currentSessionId.value
+  const sessionState = sessionStates.value[sessionId]
+  
   // 添加用户消息到界面
-  messages.value.push({
+  sessionState.messages.push({
     content: messageToSend,
     direction: true,
-    sid: currentSessionId.value
+    sid: sessionId
   })
-  inputMessage.value = ''
+  sessionState.inputMessage = ''
   scrollToBottom()
   updateSessionTime()
 
@@ -212,15 +319,19 @@ const handleSendMessage = async (messageToSend: string) => {
 
 // 流式消息发送
 const handleSendMessageStream = async (messageToSend: string) => {
-  isStreaming.value = true
-  currentStreamMessage.value = ''
+  const sessionId = currentSessionId.value
+  const sessionState = sessionStates.value[sessionId]
+  
+  sessionState.isStreaming = true
+  sessionState.currentStreamMessage = ''
   
   // 添加AI消息占位符
-  const aiMessageIndex = messages.value.length
-  messages.value.push({
+  const aiMessageIndex = sessionState.messages.length
+  sessionState.streamingMessageIndex = aiMessageIndex
+  sessionState.messages.push({
     content: '⏳ 连接中...',
     direction: false,
-    sid: currentSessionId.value,
+    sid: sessionId,
     isStreaming: true
   })
   scrollToBottom()
@@ -229,7 +340,7 @@ const handleSendMessageStream = async (messageToSend: string) => {
     // 使用 chat.ts 中的 API 发送POST请求启动流式回复
     const response = await sendMessageStream({
       uid: userId.value,
-      sid: currentSessionId.value,
+      sid: sessionId,
       content: messageToSend
     })
 
@@ -278,7 +389,7 @@ const handleSendMessageStream = async (messageToSend: string) => {
           console.log(`[SSE事件] 解析成功:`, parsedData)
           
           if (parsedData && parsedData.type) {
-            await handleSSEEvent(parsedData, messageIndex)
+            await handleSSEEvent(parsedData, messageIndex, sessionId)
           } else {
             console.warn('[SSE事件] 解析的数据缺少type字段:', parsedData)
           }
@@ -294,14 +405,17 @@ const handleSendMessageStream = async (messageToSend: string) => {
         
         if (done) {
           console.log(`[SSE连接] 流结束，共处理 ${eventCount} 个事件`)
-          isStreaming.value = false
-          // 处理最后的完成状态
-          if (messages.value[aiMessageIndex]) {
-            const msg = messages.value[aiMessageIndex]
-            messages.value.splice(aiMessageIndex, 1, {
-              ...msg,
-              isStreaming: false
-            })
+          // 检查会话状态是否还存在，避免切换会话后报错
+          if (sessionStates.value[sessionId]) {
+            sessionStates.value[sessionId].isStreaming = false
+            // 处理最后的完成状态
+            if (sessionState.messages[aiMessageIndex]) {
+              const msg = sessionState.messages[aiMessageIndex]
+              sessionState.messages.splice(aiMessageIndex, 1, {
+                ...msg,
+                isStreaming: false
+              })
+            }
           }
           return
         }
@@ -339,34 +453,48 @@ const handleSendMessageStream = async (messageToSend: string) => {
   } catch (error) {
     console.error('SSE连接失败:', error)
     ElMessage.error('连接失败，请检查网络或稍后重试')
-    isStreaming.value = false
-    // 移除失败的AI消息
-    if (messages.value[aiMessageIndex]) {
-      messages.value.splice(aiMessageIndex, 1)
+    // 检查会话状态是否还存在
+    if (sessionStates.value[sessionId]) {
+      sessionStates.value[sessionId].isStreaming = false
+      // 移除失败的AI消息
+      if (sessionState.messages[aiMessageIndex]) {
+        sessionState.messages.splice(aiMessageIndex, 1)
+      }
     }
   }
 }
 
 // 处理SSE事件
-const handleSSEEvent = async (eventData: any, messageIndex: number) => {
+const handleSSEEvent = async (eventData: any, messageIndex: number, sessionId: number) => {
   console.log(`[事件处理] 类型: ${eventData.type}, 内容长度: ${eventData.content?.length || 0}`)
+  
+  // 检查会话状态是否还存在，避免切换会话后报错
+  if (!sessionStates.value[sessionId]) {
+    console.log('[事件处理] 会话状态不存在，跳过处理')
+    return
+  }
+  
+  const sessionState = sessionStates.value[sessionId]
   
   switch (eventData.type) {
     case 'start':
       console.log('[START事件] AI开始思考:', eventData.message)
       // 重置累积内容为空字符串，不包含思考提示
-      currentStreamMessage.value = ''
-      if (messages.value[messageIndex]) {
+      sessionState.currentStreamMessage = ''
+      if (sessionState.messages[messageIndex]) {
         // 显示思考提示（仅用于UI展示），但不累加到最终内容
-        const msg = messages.value[messageIndex]
-        messages.value.splice(messageIndex, 1, { 
+        const msg = sessionState.messages[messageIndex]
+        sessionState.messages.splice(messageIndex, 1, { 
           ...msg, 
           content: eventData.message || 'AI正在思考...', 
           isStreaming: true 
         })
         await nextTick()
       }
-      scrollToBottom()
+      // 只有当前会话才滚动到底部
+      if (currentSessionId.value === sessionId) {
+        scrollToBottom()
+      }
       break
       
     case 'delta':
@@ -374,23 +502,23 @@ const handleSSEEvent = async (eventData: any, messageIndex: number) => {
       const deltaContent = eventData.content || ''
       console.log(`[DELTA事件] 片段长度: ${deltaContent.length}`)
       console.log(`[DELTA事件] 片段内容: ${deltaContent.substring(0, 50)}${deltaContent.length > 50 ? '...' : ''}`)
-      console.log(`[DELTA事件] 当前累积长度: ${currentStreamMessage.value.length}`)
+      console.log(`[DELTA事件] 当前累积长度: ${sessionState.currentStreamMessage.length}`)
       
       if (deltaContent) {
         // 累加内容到最终回复（不包含任何思考提示）
-        const oldLength = currentStreamMessage.value.length
-        currentStreamMessage.value += deltaContent
-        console.log(`[DELTA事件] 累积后长度: ${currentStreamMessage.value.length} (新增: ${currentStreamMessage.value.length - oldLength})`)
+        const oldLength = sessionState.currentStreamMessage.length
+        sessionState.currentStreamMessage += deltaContent
+        console.log(`[DELTA事件] 累积后长度: ${sessionState.currentStreamMessage.length} (新增: ${sessionState.currentStreamMessage.length - oldLength})`)
         
         // 实时更新消息内容
-        if (messages.value[messageIndex]) {
-          const msg = messages.value[messageIndex]
-          messages.value.splice(messageIndex, 1, { 
+        if (sessionState.messages[messageIndex]) {
+          const msg = sessionState.messages[messageIndex]
+          sessionState.messages.splice(messageIndex, 1, { 
             ...msg, 
-            content: currentStreamMessage.value, 
+            content: sessionState.currentStreamMessage, 
             isStreaming: true 
           })
-          console.log(`[DELTA事件] UI更新完成，显示长度: ${currentStreamMessage.value.length}`)
+          console.log(`[DELTA事件] UI更新完成，显示长度: ${sessionState.currentStreamMessage.length}`)
           await nextTick()
         }
         
@@ -399,7 +527,10 @@ const handleSSEEvent = async (eventData: any, messageIndex: number) => {
           clearTimeout(scrollTimer)
         }
         scrollTimer = window.setTimeout(() => {
-          scrollToBottom()
+          // 只有当前会话才滚动到底部
+          if (currentSessionId.value === sessionId) {
+            scrollToBottom()
+          }
           scrollTimer = null
         }, 50) // 增加防抖时间，避免过于频繁的滚动
       }
@@ -407,8 +538,8 @@ const handleSSEEvent = async (eventData: any, messageIndex: number) => {
       
     case 'complete':
       console.log('[COMPLETE事件] 回复完成:', eventData.message, 'recordId:', eventData.recordId)
-      console.log(`[COMPLETE事件] 最终内容长度: ${currentStreamMessage.value.length}`)
-      isStreaming.value = false
+      console.log(`[COMPLETE事件] 最终内容长度: ${sessionState.currentStreamMessage.length}`)
+      sessionState.isStreaming = false
       
       // 清理防抖定时器
       if (scrollTimer) {
@@ -416,40 +547,42 @@ const handleSSEEvent = async (eventData: any, messageIndex: number) => {
         scrollTimer = null
       }
       
-      if (messages.value[messageIndex]) {
+      if (sessionState.messages[messageIndex]) {
         // 获取完整的回复内容
-        const completeContent = currentStreamMessage.value
+        const completeContent = sessionState.currentStreamMessage
         
         console.log('[COMPLETE事件] 设置最终消息内容')
         console.log(`[COMPLETE事件] 完整内容长度: ${completeContent.length}`)
         
         // 直接更新消息内容和状态
-        messages.value[messageIndex].content = completeContent
-        messages.value[messageIndex].isStreaming = false
+        sessionState.messages[messageIndex].content = completeContent
+        sessionState.messages[messageIndex].isStreaming = false
         if (eventData.recordId) {
-          messages.value[messageIndex].rid = eventData.recordId
+          sessionState.messages[messageIndex].rid = eventData.recordId
         }
         
         // 使用nextTick确保DOM更新完成后再进行下一步操作
         await nextTick()
         console.log('[COMPLETE事件] Vue DOM更新完成，MessageBubble应该已重新渲染markdown')
-        // 最终滚动到底部
-        scrollToBottom()
+        // 只有当前会话才滚动到底部
+        if (currentSessionId.value === sessionId) {
+          scrollToBottom()
+        }
       }
-      currentStreamMessage.value = '' // 重置累积内容
+      sessionState.currentStreamMessage = '' // 重置累积内容
       break
       
     case 'error':
       console.error('[ERROR事件] AI回复错误:', eventData.message || eventData.error)
       const errorMsg = eventData.message || eventData.error || '未知错误'
       ElMessage.error(`AI回复出错: ${errorMsg}`)
-      isStreaming.value = false
-      if (messages.value[messageIndex]) {
-        messages.value[messageIndex].content = `❌ 错误: ${errorMsg}`
-        messages.value[messageIndex].isError = true
-        delete messages.value[messageIndex].isStreaming
+      sessionState.isStreaming = false
+      if (sessionState.messages[messageIndex]) {
+        sessionState.messages[messageIndex].content = `❌ 错误: ${errorMsg}`
+        sessionState.messages[messageIndex].isError = true
+        delete sessionState.messages[messageIndex].isStreaming
       }
-      currentStreamMessage.value = '' // 重置累积内容
+      sessionState.currentStreamMessage = '' // 重置累积内容
       break
       
     default:
@@ -478,8 +611,9 @@ const updateSessionTime = () => {
   // console.log('[会话排序] 排序后会话列表:', sessions.value.map(s => ({sid: s.sid, title: s.title, updateTime: s.updateTime})))
   
   // 首次发送消息时更新标题
-  if (messages.value.length === 1) {
-    const message = messages.value[0].content
+  const sessionState = sessionStates.value[currentSessionId.value]
+  if (sessionState && sessionState.messages.length === 1) {
+    const message = sessionState.messages[0].content
     const title = message.trim().length > 10 
       ? message.trim().substring(0, 10) + '...' 
       : message.trim()
