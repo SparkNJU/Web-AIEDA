@@ -2,7 +2,10 @@
 <script setup lang="ts">
 import { ElCard, ElCollapse, ElCollapseItem } from 'element-plus'
 import MarkdownIt from 'markdown-it'
+import texmath from 'markdown-it-texmath'
+import katex from 'katex'
 import { watch, ref, computed } from 'vue'
+import 'katex/dist/katex.min.css'
 
 // 接收单个消息参数
 const props = defineProps<{
@@ -12,7 +15,33 @@ const props = defineProps<{
   isError?: boolean // 是否为错误消息
 }>()
 
-const md = new MarkdownIt()
+const md = new MarkdownIt({
+  html: true,
+  linkify: true,
+  typographer: true
+}).use(texmath, {
+  engine: katex,
+  delimiters: 'dollars',
+  katexOptions: {
+    throwOnError: false,
+    errorColor: '#cc0000',
+    // 添加一些常用的数学宏
+    macros: {
+      "\\RR": "\\mathbb{R}",
+      "\\NN": "\\mathbb{N}",
+      "\\ZZ": "\\mathbb{Z}",
+      "\\QQ": "\\mathbb{Q}",
+      "\\CC": "\\mathbb{C}",
+      "\\FF": "\\mathbb{F}",
+      "\\eps": "\\varepsilon",
+      "\\veps": "\\varepsilon",
+      "\\ph": "\\varphi",
+      "\\vph": "\\varphi",
+      "\\Om": "\\Omega",
+      "\\om": "\\omega"
+    }
+  }
+})
 const activeCollapseItems = ref<string[]>([])
 
 // 添加watch来调试props变化，同时优化性能
@@ -303,6 +332,148 @@ const processedContent = computed(() => {
 
 .md-content :deep(li) {
   margin: 4px 0;
+}
+
+/* KaTeX数学公式样式优化 */
+.md-content :deep(.katex) {
+  font-size: 1.1em;
+  line-height: 1.6;
+  font-family: 'KaTeX_Main', 'Computer Modern', 'Times New Roman', serif;
+  color: #2c3e50;
+}
+
+/* 块级数学公式（居中显示） */
+.md-content :deep(.katex-display) {
+  margin: 20px 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 16px;
+  background-color: #f9f9f9;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.md-content :deep(.katex-display > .katex) {
+  display: inline-block;
+  white-space: nowrap;
+  max-width: 100%;
+  font-size: 1.2em;
+}
+
+/* 行内数学公式 */
+.md-content :deep(.katex-inline) {
+  background-color: rgba(102, 8, 116, 0.05);
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: 1px solid rgba(102, 8, 116, 0.1);
+}
+
+/* 防止公式溢出 */
+.md-content :deep(.katex .mord) {
+  margin-right: 0.05em;
+}
+
+.md-content :deep(.katex .mbin) {
+  margin: 0 0.22em;
+}
+
+.md-content :deep(.katex .mrel) {
+  margin: 0 0.27em;
+}
+
+.md-content :deep(.katex .mpunct) {
+  margin-right: 0.1em;
+}
+
+/* 特殊数学符号样式 */
+.md-content :deep(.katex .mopen),
+.md-content :deep(.katex .mclose) {
+  color: #e74c3c;
+  font-weight: 600;
+}
+
+/* 函数名样式 */
+.md-content :deep(.katex .mop) {
+  color: #3498db;
+  font-weight: 500;
+}
+
+/* 希腊字母样式 */
+.md-content :deep(.katex .mord.mathnormal) {
+  color: #8e44ad;
+  font-style: italic;
+}
+
+/* 分数线样式 */
+.md-content :deep(.katex .frac-line) {
+  border-bottom-color: #34495e;
+  border-bottom-width: 0.05em;
+}
+
+/* 矩阵和向量样式 */
+.md-content :deep(.katex .arraycolsep) {
+  width: 0.5em;
+}
+
+.md-content :deep(.katex .begin-equation) {
+  margin: 16px 0;
+}
+
+/* 根号样式 */
+.md-content :deep(.katex .sqrt > .vlist-t) {
+  border-left-color: #2c3e50;
+}
+
+/* 错误显示样式 */
+.md-content :deep(.katex-error) {
+  color: #cc0000;
+  background-color: #ffebee;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #ffcdd2;
+  font-family: 'Courier New', monospace;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .md-content :deep(.katex-display) {
+    font-size: 0.9em;
+    padding: 12px;
+    margin: 16px 0;
+  }
+  
+  .md-content :deep(.katex) {
+    font-size: 1em;
+  }
+  
+  .md-content :deep(.katex-display > .katex) {
+    font-size: 1.1em;
+  }
+}
+
+/* 深色主题支持 */
+@media (prefers-color-scheme: dark) {
+  .md-content :deep(.katex) {
+    color: #ecf0f1;
+  }
+  
+  .md-content :deep(.katex-display) {
+    background-color: #2c3e50;
+    border-color: #34495e;
+  }
+  
+  .md-content :deep(.katex-inline) {
+    background-color: rgba(102, 8, 116, 0.15);
+    border-color: rgba(102, 8, 116, 0.3);
+  }
+  
+  .md-content :deep(.katex-error) {
+    background-color: #3c2415;
+    border-color: #8b4513;
+    color: #ff6b6b;
+  }
 }
 
 /* 工具调用和引用区域样式 */
