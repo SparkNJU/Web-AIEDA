@@ -57,7 +57,7 @@ const showWelcomeCard = computed(() => {
 })
 
 const inputDisabled = computed(() => {
-  return isLoading.value || isStreaming.value || currentSessionId.value === 0 || !userId.value
+  return isLoading.value || isStreaming.value || !userId.value
 })
 
 // 初始化加载
@@ -187,6 +187,15 @@ const handleDeleteSession = async (sessionId: number) => {
 
 // 消息发送
 const handleSendMessage = async (messageToSend: string) => {
+  // 如果没有当前会话，先创建一个新会话
+  if (currentSessionId.value === 0) {
+    await handleCreateSession()
+    // 如果创建会话失败，直接返回
+    if (currentSessionId.value === 0) {
+      return
+    }
+  }
+
   // 添加用户消息到界面
   messages.value.push({
     content: messageToSend,
@@ -512,7 +521,7 @@ const scrollToBottom = () => {
         <!-- 主内容区 -->
         <div class="chat-main">
           <!-- 标题栏 -->
-          <div class="chat-main-header" v-if="currentSessionId !== 0">
+          <div class="chat-main-header" v-if="currentSessionId !== 0 && messages.length > 0">
             <div class="header-content">
               <h2>{{ currentSessionTitle || '新会话' }}</h2>
             </div>
@@ -528,7 +537,7 @@ const scrollToBottom = () => {
             <WelcomeCard 
               v-else-if="showWelcomeCard"
               :suggestions="suggestionQuestions"
-              @insert-question="(q: string) => { inputMessage = q; handleCreateSession() }"
+              @insert-question="(q: string) => { inputMessage = q }"
             />
           </div>
 
