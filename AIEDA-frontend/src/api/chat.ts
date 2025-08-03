@@ -26,6 +26,7 @@ export interface ChatRequestVO {
   uid: number
   content: string
   sid: number
+  fileReferences?: string[] // 添加文件引用
 }
 
 export interface CreateSessionRequestVO {

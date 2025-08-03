@@ -8,8 +8,10 @@ import ChatAside from './ChatAside.vue'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
 import WelcomeCard from './WelcomeCard.vue'
+import FilePreview from '../../components/FilePreview.vue'
 // 导入API
 import { createSession, getSessionRecords, getUserSessions, sendMessageStream, updateSessionTitle, deleteSession } from '../../api/chat'
+import { sendMessageWithFilesStream, type FileVO } from '../../api/file'
 
 // 类型定义
 export type SessionRecord = {
@@ -50,6 +52,11 @@ const sessionStates = ref<Record<number, {
 const isLoading = ref(false)
 const tempInputMessage = ref('') // 临时输入消息，用于没有会话时的输入
 let scrollTimer: number | null = null // 滚动防抖定时器
+
+// 文件预览相关状态
+const showFilePreview = ref(false)
+const previewFileId = ref('')
+const previewFile = ref<FileVO | null>(null)
 
 const suggestionQuestions = [
 "AI 如何提升 EDA 全链路仿真性能？有实测吗？",
@@ -285,7 +292,7 @@ const handleDeleteSession = async (sessionId: number) => {
 }
 
 // 消息发送
-const handleSendMessage = async (messageToSend: string) => {
+const handleSendMessage = async (messageToSend: string, files?: FileVO[]) => {
   // 如果没有当前会话，先创建一个新会话
   if (currentSessionId.value === 0) {
     await handleCreateSession()
@@ -304,8 +311,16 @@ const handleSendMessage = async (messageToSend: string) => {
   const sessionState = sessionStates.value[sessionId]
   
   // 添加用户消息到界面
+  let displayMessage = messageToSend
+  if (files && files.length > 0) {
+    displayMessage += `\n\n📎 附件 (${files.length} 个文件):`
+    files.forEach(file => {
+      displayMessage += `\n• ${file.originalName}`
+    })
+  }
+  
   sessionState.messages.push({
-    content: messageToSend,
+    content: displayMessage,
     direction: true,
     sid: sessionId
   })
@@ -313,12 +328,12 @@ const handleSendMessage = async (messageToSend: string) => {
   scrollToBottom()
   updateSessionTime()
 
-  // 使用流式输出发送消息
-  await handleSendMessageStream(messageToSend)
+  // 使用流式输出发送消息（带文件或不带文件）
+  await handleSendMessageStream(messageToSend, files)
 }
 
 // 流式消息发送
-const handleSendMessageStream = async (messageToSend: string) => {
+const handleSendMessageStream = async (messageToSend: string, files?: FileVO[]) => {
   const sessionId = currentSessionId.value
   const sessionState = sessionStates.value[sessionId]
   
@@ -337,12 +352,24 @@ const handleSendMessageStream = async (messageToSend: string) => {
   scrollToBottom()
 
   try {
-    // 使用 chat.ts 中的 API 发送POST请求启动流式回复
-    const response = await sendMessageStream({
-      uid: userId.value,
-      sid: sessionId,
-      content: messageToSend
-    })
+    let response: Response
+    
+    if (files && files.length > 0) {
+      // 带文件的消息发送
+      response = await sendMessageWithFilesStream({
+        uid: userId.value,
+        sid: sessionId,
+        content: messageToSend,
+        fileReferences: files.map(f => f.fileId)
+      })
+    } else {
+      // 普通消息发送
+      response = await sendMessageStream({
+        uid: userId.value,
+        sid: sessionId,
+        content: messageToSend
+      })
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
@@ -590,6 +617,24 @@ const handleSSEEvent = async (eventData: any, messageIndex: number, sessionId: n
   }
 }
 
+// 文件预览相关方法
+const openFilePreview = (file: FileVO) => {
+  previewFile.value = file
+  previewFileId.value = file.fileId
+  showFilePreview.value = true
+}
+
+const closeFilePreview = () => {
+  showFilePreview.value = false
+  previewFileId.value = ''
+  previewFile.value = null
+}
+
+// 暴露给模板使用
+defineExpose({
+  openFilePreview
+})
+
 // 工具方法
 const updateSessionTime = () => {
   const session = sessions.value.find(s => s.sid === currentSessionId.value)
@@ -653,7 +698,7 @@ const scrollToBottom = () => {
         />
 
         <!-- 主内容区 -->
-        <div class="chat-main">
+        <div class="chat-main" :class="{ 'with-preview': showFilePreview }">
           <!-- 标题栏 -->
           <div class="chat-main-header" v-if="currentSessionId !== 0 && messages.length > 0">
             <div class="header-content">
@@ -681,8 +726,21 @@ const scrollToBottom = () => {
             :is-loading="isLoading"
             :input-disabled="inputDisabled"
             :is-streaming="isStreaming"
+            :uid="userId"
+            :sid="currentSessionId"
             @update:input-message="(val: string) => inputMessage = val"
             @send-message="handleSendMessage"
+          />
+        </div>
+
+        <!-- 文件预览面板 -->
+        <div v-if="showFilePreview" class="file-preview-panel">
+          <FilePreview
+            :file-id="previewFileId"
+            :file="previewFile || undefined"
+            :visible="showFilePreview"
+            @update:visible="showFilePreview = $event"
+            @close="closeFilePreview"
           />
         </div>
       </div>
@@ -722,6 +780,37 @@ const scrollToBottom = () => {
   height: 100%;
   min-width: 0; /* 防止内容溢出 */
   position: relative;
+  transition: all 0.3s ease;
+}
+
+/* 当有文件预览时，聊天主区域变窄 */
+.chat-main.with-preview {
+  flex: 0 0 60%; /* 聊天区域占60%宽度 */
+}
+
+.file-preview-panel {
+  flex: 0 0 40%; /* 文件预览区域占40%宽度 */
+  border-left: 1px solid #e4e7ed;
+  background-color: #fff;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .chat-layout {
+    flex-direction: column;
+  }
+
+  .chat-main.with-preview {
+    flex: 0 0 50%; /* 移动端聊天区域占50%高度 */
+  }
+
+  .file-preview-panel {
+    flex: 0 0 50%; /* 移动端文件预览区域占50%高度 */
+    border-left: none;
+    border-top: 1px solid #e4e7ed;
+  }
 }
 
 .chat-main-header {
