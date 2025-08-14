@@ -3,13 +3,16 @@ package org.example.aiedabackend.service.serviceimpl;
 import org.example.aiedabackend.constant.MessageTypeConstant;
 import org.example.aiedabackend.dao.RecordRepository;
 import org.example.aiedabackend.dao.SessionRepository;
+import org.example.aiedabackend.dao.FileRepository;
 import org.example.aiedabackend.po.Record;
 import org.example.aiedabackend.po.Session;
+import org.example.aiedabackend.po.File;
 import org.example.aiedabackend.service.ChatService;
 import org.example.aiedabackend.vo.RecordVO;
 import org.example.aiedabackend.vo.SessionVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -20,7 +23,9 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -34,7 +39,39 @@ public class ChatServiceImpl implements ChatService {
     @Autowired
     private RecordRepository recordRepository;
 
+    @Autowired
+    private FileRepository fileRepository;
+
+    // LLM配置参数
+    @Value("${llm.openai.api-key}")
+    private String openaiApiKey;
+    
+    @Value("${llm.openai.base-url}")
+    private String openaiBaseUrl;
+    
+    @Value("${llm.openai.model}")
+    private String openaiModel;
+    
+    @Value("${llm.execution.model}")
+    private String executionModel;
+    
+    @Value("${llm.temperature}")
+    private String temperature;
+    
+    @Value("${llm.max-tokens}")
+    private String maxTokens;
+
     private RestTemplate restTemplate = new RestTemplate();
+
+    // 时间格式化器，用于显示毫秒级时间
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+
+    /**
+     * 获取当前时间戳字符串
+     */
+    private String getCurrentTimestamp() {
+        return LocalDateTime.now().format(TIME_FORMATTER);
+    }
 
     @Override
     public List<SessionVO> getSessions(Integer uid) {
@@ -114,6 +151,11 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public SseEmitter sendMessageSSE(Integer uid, Integer sid, String content) {
+        return sendMessageSSE(uid, sid, content, "orchestrator", "question"); // 默认使用orchestrator和question
+    }
+
+    @Override
+    public SseEmitter sendMessageSSE(Integer uid, Integer sid, String content, String agentType, String inputType) {
         // 创建SSE发射器，设置60秒超时
         SseEmitter emitter = new SseEmitter(60000L);
 
@@ -129,7 +171,7 @@ public class ChatServiceImpl implements ChatService {
 
         // 异步处理SSE流
         CompletableFuture.runAsync(() -> {
-            processAIStreamResponse(emitter, uid, sid, content, nextSeq);
+            processAIStreamResponse(emitter, uid, sid, content, nextSeq, agentType, inputType);
         });
 
         // 设置超时和错误处理
@@ -150,6 +192,14 @@ public class ChatServiceImpl implements ChatService {
      * 处理AI流式回复的完整流程
      */
     private void processAIStreamResponse(SseEmitter emitter, Integer uid, Integer sid, String content, int nextSeq) {
+        // 委托给支持inputType的完整版本
+        processAIStreamResponse(emitter, uid, sid, content, nextSeq, "orchestrator", "question");
+    }
+
+    /**
+     * 处理AI流式回复的完整流程（支持Agent类型和输入类型）
+     */
+    private void processAIStreamResponse(SseEmitter emitter, Integer uid, Integer sid, String content, int nextSeq, String agentType, String inputType) {
         StringBuilder aiReply = new StringBuilder();
         String userInputUrl = "http://localhost:8000/api/v1/user/input";
 
@@ -159,7 +209,28 @@ public class ChatServiceImpl implements ChatService {
             inputRequest.put("session_id", sid.toString());
             inputRequest.put("user_id", uid.toString());
             inputRequest.put("input_text", content);
-            inputRequest.put("input_type", "text");
+            inputRequest.put("input_type", inputType != null ? inputType : "question"); // 使用传入的inputType
+            
+            // 添加metadata，包含agent_type
+            var metadata = new java.util.HashMap<String, Object>();
+            metadata.put("agent_type", agentType != null ? agentType : "orchestrator");
+            
+            // 如果是config类型，添加LLM配置
+            String finalInputType = inputType != null ? inputType : "question";
+            if ("config".equals(finalInputType)) {
+                var llmConfig = new java.util.HashMap<String, Object>();
+                llmConfig.put("api_key", openaiApiKey);
+                llmConfig.put("base_url", openaiBaseUrl);
+                llmConfig.put("model", openaiModel);
+                metadata.put("llm_config", llmConfig);
+                
+                // 添加其他配置参数
+                metadata.put("execution_model", executionModel);
+                metadata.put("temperature", temperature);
+                metadata.put("max_tokens", maxTokens);
+            }
+            
+            inputRequest.put("metadata", metadata);
 
             var inputResponse = restTemplate.postForObject(userInputUrl, inputRequest, java.util.Map.class);
             if (inputResponse == null || !"success".equals(inputResponse.get("status"))) {
@@ -176,23 +247,15 @@ public class ChatServiceImpl implements ChatService {
 
             // 保存完整的AI回复
             Record aiRecord = null;
-            if (finalReply != null && !finalReply.trim().isEmpty() && !finalReply.equals("AI回复为空")) {
-                aiRecord = new Record(sid, uid, false, finalReply, nextSeq + 1,
-                    MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
-                aiRecord = recordRepository.save(aiRecord);
-                System.out.println("AI回复已保存，记录ID: " + aiRecord.getRid() + "，内容长度: " + finalReply.length());
-            } else {
-                System.out.println("AI回复为空或无效，将使用默认回复");
-                // 如果没有有效回复，创建一个默认回复
-                String defaultReply = aiReply.length() > 0 ? aiReply.toString() : "AI回复为空";
-                aiRecord = new Record(sid, uid, false, defaultReply, nextSeq + 1,
-                    MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
-                aiRecord = recordRepository.save(aiRecord);
+            if (finalReply != null && !finalReply.trim().isEmpty()) {
+                LocalDateTime now = LocalDateTime.now();
+                aiRecord = new Record(sid, uid, false, finalReply, nextSeq + 1, MessageTypeConstant.LLM_GENERATION, now);
+                recordRepository.save(aiRecord);
             }
 
-            // 无论如何都要发送完成信号
-            int recordId = aiRecord != null ? aiRecord.getRid() : -1;
-            sendCompleteToFrontend(emitter, "回复完成", recordId);
+            // 发送完成信号
+            sendCompleteToFrontend(emitter, "回复完成", aiRecord != null ? aiRecord.getRid() : null);
+
             System.out.println("流式处理完成，已发送complete事件");
 
         } catch (Exception e) {
@@ -296,7 +359,21 @@ public class ChatServiceImpl implements ChatService {
             return false;
         }
 
-        // 处理事件类型数据
+        // 检查是否是新格式的事件数据（包含events数组）
+        if (eventData.containsKey("events")) {
+            @SuppressWarnings("unchecked")
+            var events = (java.util.List<java.util.Map<String, Object>>) eventData.get("events");
+            if (events != null) {
+                for (var event : events) {
+                    if (processSingleEvent(emitter, event, sessionId, aiReply, fullDelta, foundFinishStart)) {
+                        return true; // 生成完成
+                    }
+                }
+            }
+            return false;
+        }
+
+        // 处理旧格式的事件类型数据
         if ("event".equals(eventData.get("type"))) {
             @SuppressWarnings("unchecked")
             var data = (java.util.Map<String, Object>) eventData.get("data");
@@ -327,33 +404,50 @@ public class ChatServiceImpl implements ChatService {
     private boolean processSingleEvent(SseEmitter emitter, java.util.Map<String, Object> event, String sessionId,
                                      StringBuilder aiReply, StringBuilder fullDelta, boolean[] foundFinishStart) throws Exception {
 
+        // 尝试从顶层和data字段获取session_id和user_id
         String eventSessionId = (String) event.get("session_id");
         String userId = (String) event.get("user_id");
         String eventType = (String) event.get("event");
         String tool = (String) event.get("tool");
 
+        // 如果顶层没有，尝试从data字段获取
+        if (eventSessionId == null || userId == null || eventType == null) {
+            @SuppressWarnings("unchecked")
+            var data = (java.util.Map<String, Object>) event.get("data");
+            if (data != null) {
+                if (eventSessionId == null) eventSessionId = (String) data.get("session_id");
+                if (userId == null) userId = (String) data.get("user_id");
+                if (eventType == null) eventType = (String) data.get("event");
+                if (tool == null) tool = (String) data.get("tool");
+            }
+        }
+
         // 打印事件详情到控制台
         System.out.println(String.format("事件详情 - session_id: %s, user_id: %s, event: %s, tool: %s",
             eventSessionId, userId, eventType, tool));
 
-        // 检查是否是结束事件（after + orchestrator + result.message = "FINISH"）
-        if (sessionId.equals(eventSessionId) && "after".equals(eventType) && "orchestrator".equals(tool)) {
-            // 检查result字段
-            @SuppressWarnings("unchecked")
-            var result = (java.util.Map<String, Object>) event.get("result");
-            if (result != null && Boolean.TRUE.equals(result.get("success"))) {
-                String message = (String) result.get("message");
-                if ("FINISH".equals(message)) {
-                    log.info("检测到result.message=FINISH，AI回复生成完成");
-                    return true; // 生成完成
-                }
-            }
+        // 检查是否是结束事件（agent.loop_end + orchestrator）
+        if ("agent.loop_end".equals(eventType) && "orchestrator".equals(tool)) {
+            log.info("检测到agent.loop_end事件，AI回复生成完成");
+            System.out.println("检测到agent.loop_end事件，AI回复生成完成");
+            return true; // 生成完成
         }
 
         // 处理流式输出事件（llm_tool.chunk）
-        if (sessionId.equals(eventSessionId) && "llm_tool.chunk".equals(eventType)) {
+        if ("llm_tool.chunk".equals(eventType)) {
+            // 首先尝试从顶层获取payload
             @SuppressWarnings("unchecked")
             var payload = (java.util.Map<String, Object>) event.get("payload");
+            
+            // 如果顶层没有，尝试从data字段获取
+            if (payload == null) {
+                @SuppressWarnings("unchecked")
+                var data = (java.util.Map<String, Object>) event.get("data");
+                if (data != null) {
+                    payload = (java.util.Map<String, Object>) data.get("payload");
+                }
+            }
+            
             if (payload != null && payload.get("delta") != null) {
                 String delta = payload.get("delta").toString();
 
@@ -457,43 +551,6 @@ public class ChatServiceImpl implements ChatService {
         }
         
         return -1; // 标签不完整
-    }
-
-    /**
-     * 处理finish标签内的内容，清理JSON格式等
-     */
-    private String processFinishContent(String content) {
-        if (content == null || content.trim().isEmpty()) {
-            return "";
-        }
-
-        // 尝试解析JSON格式的内容
-        try {
-            // 检查是否是JSON格式
-            if (content.trim().startsWith("{") && content.trim().endsWith("}")) {
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> json = mapper.readValue(content.trim(), java.util.Map.class);
-
-                Object answer = json.get("answer");
-                if (answer != null) {
-                    return answer.toString();
-                }
-            }
-
-            // 如果不是完整的JSON，尝试提取JSON片段
-            String cleaned = content
-                .replaceAll("\\{\"answer\":\"?", "")  // 移除answer开始部分
-                .replaceAll("\"?\\}$", "")  // 移除结尾的引号和大括号
-                .trim();
-
-            return cleaned;
-
-        } catch (Exception e) {
-            // JSON解析失败，返回清理后的文本
-            System.out.println("JSON解析失败，返回清理后的文本: " + content);
-            return content.trim();
-        }
     }
 
     /**
@@ -601,53 +658,262 @@ public class ChatServiceImpl implements ChatService {
         }
     }
 
+    @Override
+    public SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences) {
+        return sendMessageWithFilesSSE(uid, sid, content, fileReferences, "orchestrator", "question"); // 默认使用orchestrator和question
+    }
+
+    @Override
+    public SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences, String agentType, String inputType) {
+        System.out.println("[" + getCurrentTimestamp() + "] 开始处理带文件的SSE请求 - uid: " + uid + ", sid: " + sid + ", content: " + content + ", files: " + fileReferences + ", agentType: " + agentType + ", inputType: " + inputType);
+
+        // 创建SSE发射器，设置60秒超时
+        SseEmitter emitter = new SseEmitter(60000L);
+
+        // 更新会话时间，确保最新发送消息的会话显示在最上面
+        updateSessionTime(uid, sid);
+
+        // 保存用户消息
+        List<Record> existing = recordRepository.findBySidOrderBySequenceAsc(sid);
+        int nextSeq = existing.isEmpty() ? 1 : existing.size() + 1;
+        LocalDateTime now = LocalDateTime.now();
+        Record userRecord = new Record(sid, uid, true, content, nextSeq, MessageTypeConstant.USER, now);
+        recordRepository.save(userRecord);
+        System.out.println("[" + getCurrentTimestamp() + "] 用户消息已保存 - recordId: " + userRecord.getRid());
+
+        // 异步处理SSE流
+        CompletableFuture.runAsync(() -> {
+            processAIStreamResponseWithFiles(emitter, uid, sid, content, fileReferences, nextSeq, agentType, inputType);
+        });
+
+        // 设置超时和错误处理
+        emitter.onTimeout(() -> {
+            System.out.println("[" + getCurrentTimestamp() + "] SSE连接超时 - sid: " + sid);
+            log.warn("SSE连接超时");
+            emitter.complete();
+        });
+
+        emitter.onError((throwable) -> {
+            System.out.println("[" + getCurrentTimestamp() + "] SSE连接错误 - sid: " + sid + ", error: " + throwable.getMessage());
+            log.error("SSE连接错误", throwable);
+            emitter.complete();
+        });
+
+        System.out.println("[" + getCurrentTimestamp() + "] 带文件的SSE emitter已创建并返回 - sid: " + sid);
+        return emitter;
+    }
+
     /**
-     * 从完整的delta字符串中提取finish标签内的答案内容
+     * 处理带文件引用的AI流式回复
      */
-    private String extractContentFromDelta(String deltaStr) {
+    private void processAIStreamResponseWithFiles(SseEmitter emitter, Integer uid, Integer sid, String content, List<String> fileReferences, int nextSeq) {
+        processAIStreamResponseWithFiles(emitter, uid, sid, content, fileReferences, nextSeq, "orchestrator"); // 默认使用orchestrator
+    }
+
+    /**
+     * 处理带文件引用的AI流式回复（支持Agent类型选择）
+     */
+    private void processAIStreamResponseWithFiles(SseEmitter emitter, Integer uid, Integer sid, String content, List<String> fileReferences, int nextSeq, String agentType) {
+        // 委托给支持inputType的完整版本
+        processAIStreamResponseWithFiles(emitter, uid, sid, content, fileReferences, nextSeq, agentType, "question");
+    }
+
+    /**
+     * 处理带文件引用的AI流式回复（支持Agent类型和输入类型选择）
+     */
+    private void processAIStreamResponseWithFiles(SseEmitter emitter, Integer uid, Integer sid, String content, List<String> fileReferences, int nextSeq, String agentType, String inputType) {
+        StringBuilder aiReply = new StringBuilder();
+        String userInputUrl = "http://localhost:8000/api/v1/user/input";
+
+        System.out.println("[" + getCurrentTimestamp() + "] 开始处理带文件的AI流式回复 - sid: " + sid + ", agentType: " + agentType + ", inputType: " + inputType);
+
         try {
-            // 查找<finish>标签内的内容
-            int startIndex = deltaStr.indexOf("<finish>");
-            int endIndex = deltaStr.indexOf("</finish>");
-            
-            if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
-                // 提取<finish>标签内的内容
-                String finishContent = deltaStr.substring(startIndex + 8, endIndex).trim();
-                System.out.println("提取到finish标签内容: " + finishContent);
-                
-                // 解析JSON，提取answer字段
-                try {
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    @SuppressWarnings("unchecked")
-                    java.util.Map<String, Object> json = mapper.readValue(finishContent, java.util.Map.class);
-                    
-                    Object answer = json.get("answer");
-                    if (answer != null) {
-                        String answerContent = answer.toString();
-                        System.out.println("提取到answer内容: " + answerContent);
-                        return answerContent;
+            // 1. 准备文件引用信息
+            List<String> validFileIds = new ArrayList<>();
+            if (fileReferences != null && !fileReferences.isEmpty()) {
+                for (String fileId : fileReferences) {
+                    File file = fileRepository.findByFileId(fileId);
+                    if (file != null && file.getUid().equals(uid) && file.getSid().equals(sid)) {
+                        validFileIds.add(fileId);
+                        System.out.println("[" + getCurrentTimestamp() + "] 验证文件引用成功 - fileId: " + fileId + ", fileName: " + file.getOriginalName());
+                    } else {
+                        System.out.println("[" + getCurrentTimestamp() + "] 文件引用验证失败 - fileId: " + fileId);
                     }
-                } catch (Exception jsonError) {
-                    System.out.println("JSON解析失败，返回原始内容: " + finishContent);
-                    // 如果JSON解析失败，返回原始内容
-                    return finishContent;
                 }
             }
+
+            // 2. 提交用户输入（包含文件引用）
+            System.out.println("[" + getCurrentTimestamp() + "] 准备提交带文件的用户输入到后端API - sid: " + sid + ", 有效文件数: " + validFileIds.size());
+            var inputRequest = new java.util.HashMap<String, Object>();
+            inputRequest.put("session_id", sid.toString());
+            inputRequest.put("user_id", uid.toString());
+            inputRequest.put("input_text", content);
+            inputRequest.put("input_type", inputType != null ? inputType : "question");
+            if (!validFileIds.isEmpty()) {
+                inputRequest.put("file_references", validFileIds);
+            }
             
-            // 如果没有找到finish标签，直接返回累积的delta内容
-            // 去除可能的JSON格式字符和标签
-            String cleanedContent = deltaStr
-                .replaceAll("</?finish>", "")  // 移除finish标签
-                .replaceAll("\\{\"answer\":\"?", "")  // 秼除answer开始部分
-                .replaceAll("\"?\\}$", "")  // 移除结尾的引号和大括号
-                .trim();
+            // 添加metadata字段，包含agent_type
+            var metadata = new java.util.HashMap<String, Object>();
+            metadata.put("agent_type", agentType != null ? agentType : "orchestrator");
+            
+            // 如果是config类型，添加LLM配置
+            String finalInputType = inputType != null ? inputType : "question";
+            if ("config".equals(finalInputType)) {
+                var llmConfig = new java.util.HashMap<String, Object>();
+                llmConfig.put("api_key", openaiApiKey);
+                llmConfig.put("base_url", openaiBaseUrl);
+                llmConfig.put("model", openaiModel);
+                metadata.put("llm_config", llmConfig);
                 
-            return cleanedContent;
+                // 添加其他配置参数
+                metadata.put("execution_model", executionModel);
+                metadata.put("temperature", temperature);
+                metadata.put("max_tokens", maxTokens);
+            }
             
+            inputRequest.put("metadata", metadata);
+
+            var inputResponse = restTemplate.postForObject(userInputUrl, inputRequest, java.util.Map.class);
+            System.out.println("[" + getCurrentTimestamp() + "] 带文件的用户输入提交完成 - sid: " + sid + ", response: " + inputResponse);
+
+            if (inputResponse == null || !"success".equals(inputResponse.get("status"))) {
+                System.out.println("[" + getCurrentTimestamp() + "] 提交带文件的用户输入失败 - sid: " + sid + ", response: " + inputResponse);
+                sendErrorToFrontend(emitter, "提交用户输入失败");
+                return;
+            }
+
+            // 立即发送开始信号
+            System.out.println("[" + getCurrentTimestamp() + "] 发送开始信号到前端 - sid: " + sid);
+            sendMessageToFrontend(emitter, "start", "AI正在思考（正在处理" + validFileIds.size() + "个文件）...", null);
+
+            // 3. 获取AI流式回复
+            System.out.println("[" + getCurrentTimestamp() + "] 开始建立SSE连接获取AI回复 - sid: " + sid);
+            String sessionId = sid.toString();
+            String finalReply = getAIStreamResponse(emitter, sessionId, aiReply);
+            System.out.println("[" + getCurrentTimestamp() + "] 带文件的AI流式回复获取完成 - sid: " + sid + ", 回复长度: " + (finalReply != null ? finalReply.length() : 0));
+
+            // 保存完整的AI回复
+            Record aiRecord = null;
+            if (finalReply != null && !finalReply.trim().isEmpty() && !finalReply.equals("AI回复为空")) {
+                aiRecord = new Record(sid, uid, false, finalReply, nextSeq + 1,
+                    MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
+                aiRecord = recordRepository.save(aiRecord);
+                System.out.println("[" + getCurrentTimestamp() + "] 带文件的AI回复已保存 - recordId: " + aiRecord.getRid() + ", 内容长度: " + finalReply.length());
+            } else {
+                System.out.println("[" + getCurrentTimestamp() + "] 带文件的AI回复为空或无效，将使用默认回复 - sid: " + sid);
+                String defaultReply = aiReply.length() > 0 ? aiReply.toString() : "AI回复为空";
+                aiRecord = new Record(sid, uid, false, defaultReply, nextSeq + 1,
+                    MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
+                aiRecord = recordRepository.save(aiRecord);
+            }
+
+            // 发送完成信号
+            int recordId = aiRecord != null ? aiRecord.getRid() : -1;
+            System.out.println("[" + getCurrentTimestamp() + "] 发送完成信号到前端 - sid: " + sid + ", recordId: " + recordId);
+            sendCompleteToFrontend(emitter, "回复完成", recordId);
+            System.out.println("[" + getCurrentTimestamp() + "] 带文件的流式处理完成，已发送complete事件 - sid: " + sid);
+
         } catch (Exception e) {
-            log.warn("提取delta内容失败: " + deltaStr, e);
-            // 如果所有解析都失败，返回清理后的文本
-            return deltaStr.replaceAll("[<>{}\"\\[\\]]", "").trim();
+            System.out.println("[" + getCurrentTimestamp() + "] 带文件的SSE流式处理失败 - sid: " + sid + ", error: " + e.getMessage());
+            log.error("带文件的SSE流式处理失败", e);
+            handleProcessError(emitter, e, uid, sid, nextSeq);
+        } finally {
+            // 确保连接被正确关闭
+            try {
+                emitter.complete();
+                System.out.println("[" + getCurrentTimestamp() + "] 带文件的SSE连接已关闭 - sid: " + sid);
+            } catch (Exception e) {
+                System.out.println("[" + getCurrentTimestamp() + "] 关闭带文件的SSE连接失败 - sid: " + sid + ", error: " + e.getMessage());
+                log.error("关闭带文件的SSE连接失败", e);
+            }
+        }
+    }
+
+    @Override
+    public SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType) {
+        // 创建SSE发射器，短超时即可因为不需要等待流式回复
+        SseEmitter emitter = new SseEmitter(10000L);
+
+        // 更新会话时间
+        updateSessionTime(uid, sid);
+
+        // 异步处理配置发送
+        CompletableFuture.runAsync(() -> {
+            processConfigMessage(emitter, uid, sid, agentType);
+        });
+
+        // 设置超时和错误处理
+        emitter.onTimeout(() -> {
+            log.warn("配置消息SSE连接超时");
+            emitter.complete();
+        });
+
+        emitter.onError((throwable) -> {
+            log.error("配置消息SSE连接错误", throwable);
+            emitter.complete();
+        });
+
+        return emitter;
+    }
+
+    /**
+     * 处理配置消息发送（不等待流式回复）
+     */
+    private void processConfigMessage(SseEmitter emitter, Integer uid, Integer sid, String agentType) {
+        String userInputUrl = "http://localhost:8000/api/v1/user/input";
+
+        try {
+            // 发送开始信号
+            sendMessageToFrontend(emitter, "start", "正在配置LLM参数...", null);
+
+            // 准备配置请求
+            var inputRequest = new java.util.HashMap<String, Object>();
+            inputRequest.put("session_id", sid.toString());
+            inputRequest.put("user_id", uid.toString());
+            inputRequest.put("input_text", "");
+            inputRequest.put("input_type", "config");
+            
+            // 添加metadata，包含agent_type和LLM配置
+            var metadata = new java.util.HashMap<String, Object>();
+            metadata.put("agent_type", agentType != null ? agentType : "orchestrator");
+            
+            var llmConfig = new java.util.HashMap<String, Object>();
+            llmConfig.put("api_key", openaiApiKey);
+            llmConfig.put("base_url", openaiBaseUrl);
+            llmConfig.put("model", openaiModel);
+            metadata.put("llm_config", llmConfig);
+            
+            // 添加其他配置参数
+            metadata.put("execution_model", executionModel);
+            metadata.put("temperature", temperature);
+            metadata.put("max_tokens", maxTokens);
+            
+            inputRequest.put("metadata", metadata);
+
+            // 发送配置到LLM
+            var inputResponse = restTemplate.postForObject(userInputUrl, inputRequest, java.util.Map.class);
+            
+            if (inputResponse != null && "success".equals(inputResponse.get("status"))) {
+                // 配置成功
+                sendCompleteToFrontend(emitter, "LLM配置已更新", -1);
+                log.info("LLM配置发送成功 - uid: {}, sid: {}", uid, sid);
+            } else {
+                // 配置失败
+                sendErrorToFrontend(emitter, "LLM配置更新失败");
+                log.error("LLM配置发送失败 - uid: {}, sid: {}, response: {}", uid, sid, inputResponse);
+            }
+
+        } catch (Exception e) {
+            log.error("发送配置消息失败", e);
+            sendErrorToFrontend(emitter, "配置失败: " + e.getMessage());
+        } finally {
+            // 确保连接被正确关闭
+            try {
+                emitter.complete();
+            } catch (Exception e) {
+                log.error("关闭配置SSE连接失败", e);
+            }
         }
     }
 }

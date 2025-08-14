@@ -46,12 +46,29 @@ public class ChatController {
         return Response.buildSuccess(records);
     }
 
-    @Operation(summary = "发送消息并流式获取AI回复", description = "向指定会话发送用户消息，并通过SSE流式获取AI回复")
+    @Operation(summary = "发送消息并流式获取AI回复", description = "向指定会话发送用户消息（支持文件引用和Agent类型选择），并通过SSE流式获取AI回复")
     @PostMapping(value = "/messages/stream", produces = "text/event-stream")
     public SseEmitter sendMessageSSE(
             @Parameter(description = "聊天消息请求对象", required = true)
             @RequestBody ChatRequestVO request) {
-        return chatService.sendMessageSSE(request.getUid(), request.getSid(), request.getContent());
+        // 获取agentType，如果没有指定则默认为orchestrator
+        String agentType = request.getAgentType() != null ? request.getAgentType() : "orchestrator";
+        
+        // 获取inputType，如果没有指定则默认为question
+        String inputType = request.getInputType() != null ? request.getInputType() : "question";
+        
+        // 如果是config类型，使用专门的配置处理方法
+        if ("config".equals(inputType)) {
+            return chatService.sendConfigMessage(request.getUid(), request.getSid(), agentType);
+        }
+        
+        // 其他类型的消息正常处理
+        if (request.getFileReferences() != null && !request.getFileReferences().isEmpty()) {
+            return chatService.sendMessageWithFilesSSE(request.getUid(), request.getSid(), 
+                                                      request.getContent(), request.getFileReferences(), agentType, inputType);
+        } else {
+            return chatService.sendMessageSSE(request.getUid(), request.getSid(), request.getContent(), agentType, inputType);
+        }
     }
 
     @Operation(summary = "更新会话标题", description = "更新指定会话的标题")

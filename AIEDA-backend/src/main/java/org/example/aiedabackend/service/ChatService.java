@@ -28,6 +28,26 @@ public interface ChatService {
     SseEmitter sendMessageSSE(Integer uid, Integer sid, String content);
 
     /**
+     * 发送消息，并通过SSE流式返回AI回复（支持Agent类型和输入类型选择）
+     */
+    SseEmitter sendMessageSSE(Integer uid, Integer sid, String content, String agentType, String inputType);
+
+    /**
+     * 发送带文件引用的消息，并通过SSE流式返回AI回复
+     */
+    SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences);
+
+    /**
+     * 发送带文件引用的消息，并通过SSE流式返回AI回复（支持Agent类型和输入类型选择）
+     */
+    SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences, String agentType, String inputType);
+
+    /**
+     * 发送配置消息（不等待流式回复，仅发送配置）
+     */
+    SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType);
+
+    /**
      * 更新会话标题
      */
     boolean updateSessionTitle(Integer uid, Integer sid, String title);

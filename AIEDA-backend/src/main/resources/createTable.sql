@@ -42,12 +42,36 @@ CREATE TABLE records (
     FOREIGN KEY (uid) REFERENCES users(uid) ON DELETE CASCADE
 );
 
+-- 文件管理表
+DROP TABLE IF EXISTS files;
+CREATE TABLE files (
+    file_id VARCHAR(36) PRIMARY KEY COMMENT '文件ID (UUID)',
+    uid INT NOT NULL COMMENT '用户ID',
+    sid INT NOT NULL COMMENT '会话ID',
+    original_name VARCHAR(255) NOT NULL COMMENT '原始文件名',
+    saved_name VARCHAR(255) NOT NULL COMMENT '保存的文件名',
+    file_path VARCHAR(500) NOT NULL COMMENT '文件在大模型服务中的路径',
+    file_size BIGINT NOT NULL COMMENT '文件大小（字节）',
+    file_type VARCHAR(50) NOT NULL COMMENT '文件类型/扩展名',
+    upload_time DATETIME NOT NULL COMMENT '上传时间',
+    FOREIGN KEY (uid) REFERENCES users(uid) ON DELETE CASCADE,
+    FOREIGN KEY (sid) REFERENCES sessions(sid) ON DELETE CASCADE,
+    INDEX idx_uid_sid (uid, sid),
+    INDEX idx_upload_time (upload_time)
+);
+
 
 -- 插入集成电路设计相关的测试会话
 INSERT INTO sessions (uid, title, create_time, update_time) VALUES
     (1, '芯片功耗优化方案', '2024-01-15 09:30:00', '2024-01-15 11:45:00'),
     (1, '时序分析问题排查', '2024-01-16 13:20:00', '2024-01-16 15:10:00'),
     (1, '布局布线策略讨论', '2024-01-17 10:15:00', '2024-01-17 16:30:00');
+
+-- 插入测试文件记录
+INSERT INTO files (file_id, uid, sid, original_name, saved_name, file_path, file_size, file_type, upload_time) VALUES
+    ('f1e2d3c4-b5a6-9c8d-7e6f-1a2b3c4d5e6f', 1, 1, 'power_analysis.pdf', '20240115_power_analysis.pdf', 'temp/uploads/user1/session1/20240115_power_analysis.pdf', 2048000, '.pdf', '2024-01-15 09:25:00'),
+    ('a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6', 1, 2, 'timing_report.txt', '20240116_timing_report.txt', 'temp/uploads/user1/session2/20240116_timing_report.txt', 512000, '.txt', '2024-01-16 13:15:00'),
+    ('x1y2z3a4-b5c6-d7e8-f9g0-h1i2j3k4l5m6', 1, 3, 'layout_design.dxf', '20240117_layout_design.dxf', 'temp/uploads/user1/session3/20240117_layout_design.dxf', 8192000, '.dxf', '2024-01-17 10:10:00');
 
 -- 插入集成电路设计相关的对话记录
 INSERT INTO records (sid, uid, direction, content, sequence, type, create_time) VALUES
