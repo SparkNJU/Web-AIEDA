@@ -1,14 +1,215 @@
+<template>
+  <div v-if="visible" class="file-preview-overlay">
+    <!-- 侧边面板模式 -->
+    <div class="side-panel-container">
+      <!-- 左侧文件目录 -->
+      <div class="directory-panel" :class="{ 'collapsed': directoryCollapsed }">
+        <div class="directory-header" :class="{ 'collapsed': directoryCollapsed }">
+          <div class="header-title" v-if="!directoryCollapsed">
+            <el-icon class="title-icon"><FolderOpened /></el-icon>
+            <span class="title-text">文件目录</span>
+          </div>
+          <div class="header-actions" :class="{ 'vertical': directoryCollapsed }" v-if="!directoryCollapsed">
+            <el-button 
+              :icon="Refresh" 
+              @click="loadFileList"
+              :loading="isLoading"
+              size="small"
+              circle
+              title="刷新文件列表"
+            />
+            <el-button 
+              :icon="ArrowLeft" 
+              @click="directoryCollapsed = !directoryCollapsed"
+              size="small"
+              circle
+              title="收起目录"
+            />
+          </div>
+          <!-- 收起状态下的菜单项 -->
+          <div class="collapsed-menu" v-if="directoryCollapsed">
+            <div 
+              class="menu-item" 
+              @click="loadFileList"
+              :class="{ 'loading': isLoading }"
+              title="刷新文件列表"
+            >
+              <el-icon><Refresh /></el-icon>
+            </div>
+            <div 
+              class="menu-item" 
+              @click="directoryCollapsed = !directoryCollapsed"
+              title="展开目录"
+            >
+              <el-icon><ArrowRight /></el-icon>
+            </div>
+          </div>
+        </div>
+        
+        <div v-if="!directoryCollapsed" class="directory-content">
+          <div class="file-list" v-loading="isLoading">
+            <!-- 空状态 -->
+            <div v-if="fileList.length === 0 && !isLoading" class="empty-state">
+              <el-icon class="empty-icon"><Document /></el-icon>
+              <p class="empty-text">当前会话暂无文件</p>
+              <p class="empty-hint">上传文件后将在此处显示</p>
+            </div>
+
+            <!-- 文件项 -->
+            <div 
+              v-for="file in fileList" 
+              :key="file.fileId || file.originalName"
+              class="file-item"
+              :class="{ 'active': selectedFile?.originalName === file.originalName }"
+              @click="selectFileForPreview(file)"
+            >
+              <div class="file-icon">
+                <el-icon size="20" color="#606266">
+                  <Document />
+                </el-icon>
+              </div>
+              <div class="file-info">
+                <div class="file-name">{{ file.originalName }}</div>
+                <div class="file-meta">
+                  <span class="file-type">{{ getFileTypeDisplay(file.fileType) }}</span>
+                </div>
+              </div>
+              <div class="file-actions">
+                <el-button 
+                  :icon="Download" 
+                  @click.stop="downloadFile(file)"
+                  size="small"
+                  circle
+                  title="下载"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 右侧文件预览 -->
+      <div class="explorer-panel">
+        <div class="explorer-header">
+          <div class="header-left">
+            <div class="file-icon">
+              <el-icon size="24" color="#409eff">
+                <Document />
+              </el-icon>
+            </div>
+            <div class="file-info">
+              <h3 class="file-name">{{ selectedFile?.originalName || '请选择文件' }}</h3>
+              <div v-if="selectedFile" class="file-meta">
+                <el-tag size="small" type="info">{{ getFileTypeDisplay(selectedFile?.fileType) }}</el-tag>
+              </div>
+            </div>
+          </div>
+          <div class="header-actions">
+            <el-button 
+              v-if="selectedFile"
+              type="primary" 
+              :icon="Download" 
+              @click="downloadFile(selectedFile)"
+              :loading="isDownloading"
+              size="small"
+            >
+              下载
+            </el-button>
+            <el-button 
+              type="default" 
+              :icon="Close" 
+              @click="handleClose"
+              size="small"
+              circle
+              title="关闭"
+            />
+          </div>
+        </div>
+        
+        <!-- 文件预览内容 -->
+        <div class="preview-content" v-loading="isLoading">
+          <template v-if="selectedFile">
+            <!-- 图片预览 -->
+            <template v-if="previewType === 'image' && previewUrl">
+              <div class="image-preview">
+                <img :src="previewUrl" :alt="selectedFile.originalName" class="preview-image" />
+              </div>
+            </template>
+            
+            <!-- PDF预览 -->
+            <template v-else-if="previewType === 'pdf' && previewUrl">
+              <div class="pdf-preview">
+                <iframe :src="previewUrl" class="pdf-iframe" frameborder="0"></iframe>
+              </div>
+            </template>
+            
+            <!-- 文本预览 -->
+            <template v-else-if="previewType === 'text' && previewContent">
+              <div class="text-preview">
+                <pre class="text-content">{{ previewContent }}</pre>
+              </div>
+            </template>
+            
+            <!-- 不支持预览的文件 -->
+            <template v-else-if="previewType === 'unsupported'">
+              <div class="no-preview">
+                <el-icon class="no-preview-icon"><Document /></el-icon>
+                <p class="no-preview-text">此文件类型不支持在线预览</p>
+                <p class="no-preview-hint">请点击下载按钮下载文件后查看</p>
+                <el-button 
+                  type="primary" 
+                  :icon="Download" 
+                  @click="downloadFile(selectedFile)"
+                  :loading="isDownloading"
+                >
+                  下载文件
+                </el-button>
+              </div>
+            </template>
+            
+            <!-- 加载状态 -->
+            <template v-else-if="isLoading">
+              <div class="preview-placeholder">
+                <el-icon class="placeholder-icon"><View /></el-icon>
+                <p class="placeholder-text">正在加载预览...</p>
+              </div>
+            </template>
+          </template>
+          
+          <!-- 未选择文件 -->
+          <template v-else>
+            <div class="preview-placeholder">
+              <el-icon class="placeholder-icon"><View /></el-icon>
+              <p class="placeholder-text">请选择要预览的文件</p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { ElCard, ElButton, ElIcon, ElTag, ElMessage } from 'element-plus'
-import { Download, Close, Document } from '@element-plus/icons-vue'
-import { previewFile, downloadFile, getFileInfo, type FileVO, type FilePreviewVO, formatFileSize, getFileIcon, canPreviewFile } from '../api/file'
+import { ref, watch } from 'vue'
+import { ElButton, ElIcon, ElTag, ElMessage } from 'element-plus'
+import { 
+  FolderOpened, 
+  Refresh, 
+  Close, 
+  Document, 
+  Download, 
+  View, 
+  ArrowLeft, 
+  ArrowRight 
+} from '@element-plus/icons-vue'
+import { getFileStructure, downloadFile as apiDownloadFile, previewFile, type FileVO } from '../api/file'
 
 // 组件属性
 const props = defineProps<{
-  fileId?: string
-  file?: FileVO
+  uid: number
+  sid: number
   visible: boolean
+  selectedFileId?: string
 }>()
 
 // 组件事件
@@ -18,119 +219,166 @@ const emit = defineEmits<{
 }>()
 
 // 响应式数据
-const fileInfo = ref<FileVO | null>(props.file || null)
-const previewData = ref<FilePreviewVO | null>(null)
-const isLoading = ref(false)
+const fileList = ref<FileVO[]>([])
+const selectedFile = ref<FileVO | null>(null)
 const previewContent = ref('')
+const previewUrl = ref('')
+const previewType = ref<'text' | 'image' | 'pdf' | 'unsupported'>('unsupported')
+const isLoading = ref(false)
 const isDownloading = ref(false)
+const directoryCollapsed = ref(false)
 
-// 计算属性
-const currentFileId = computed(() => props.fileId || props.file?.fileId)
+// 获取文件类型显示名称
+const getFileTypeDisplay = (fileType: string): string => {
+  if (fileType?.startsWith('text/')) return 'Text'
+  if (fileType?.startsWith('image/')) return 'Image'
+  if (fileType?.includes('pdf')) return 'PDF'
+  if (fileType?.includes('json')) return 'JSON'
+  if (fileType?.includes('xml')) return 'XML'
+  if (fileType?.includes('csv')) return 'CSV'
+  if (fileType?.includes('markdown')) return 'Markdown'
+  if (fileType?.includes('javascript')) return 'JavaScript'
+  if (fileType?.includes('word') || fileType?.includes('msword')) return 'Word'
+  if (fileType?.includes('excel') || fileType?.includes('sheet')) return 'Excel'
+  if (fileType?.includes('powerpoint') || fileType?.includes('presentation')) return 'PowerPoint'
+  
+  return 'File'
+}
 
-const isVisible = computed({
-  get: () => props.visible,
-  set: (value) => emit('update:visible', value)
-})
-
-const fileIcon = computed(() => {
-  return fileInfo.value ? getFileIcon(fileInfo.value.fileType) : '📁'
-})
-
-const canPreview = computed(() => {
-  return fileInfo.value ? canPreviewFile(fileInfo.value.fileType) : false
-})
-
-const isImageFile = computed(() => {
-  return fileInfo.value?.fileType.startsWith('image/') || false
-})
-
-const isTextFile = computed(() => {
-  if (!fileInfo.value) return false
-  const type = fileInfo.value.fileType.toLowerCase()
-  return type.startsWith('text/') || 
-         type.includes('json') || 
-         type.includes('xml') ||
-         type.includes('javascript') ||
-         type.includes('markdown')
-})
-
-const isPdfFile = computed(() => {
-  return fileInfo.value?.fileType === 'application/pdf' || false
-})
-
-// 监听文件ID变化
-watch(() => currentFileId.value, async (newFileId) => {
-  if (newFileId && props.visible) {
-    await loadFileInfo()
-    await loadPreview()
+// 加载文件列表
+const loadFileList = async () => {
+  if (!props.uid || !props.sid) {
+    fileList.value = []
+    return
   }
-}, { immediate: true })
-
-// 监听可见性变化
-watch(() => props.visible, async (visible) => {
-  if (visible && currentFileId.value) {
-    if (!fileInfo.value) {
-      await loadFileInfo()
-    }
-    await loadPreview()
-  }
-})
-
-// 加载文件信息
-const loadFileInfo = async () => {
-  if (!currentFileId.value || props.file) return
 
   try {
     isLoading.value = true
-    const response = await getFileInfo(currentFileId.value)
-    if (response.data && response.data.status === 'success') {
-      fileInfo.value = response.data.data
+    console.log('加载文件结构:', { uid: props.uid, sid: props.sid })
+    
+    const response = await getFileStructure({ uid: props.uid, sid: props.sid })
+    
+    if (response.data && response.data.code === '200') {
+      fileList.value = response.data.data.files || []
+      console.log('文件结构加载成功:', fileList.value)
+      
+      // 如果有指定的文件ID，自动选择该文件
+      if (props.selectedFileId && fileList.value.length > 0) {
+        const targetFile = fileList.value.find(f => f.fileId === props.selectedFileId || f.originalName === props.selectedFileId)
+        if (targetFile) {
+          await selectFileForPreview(targetFile)
+        }
+      }
+    } else {
+      console.log('文件结构为空或加载失败')
+      fileList.value = []
     }
   } catch (error) {
-    console.error('加载文件信息失败:', error)
-    ElMessage.error('加载文件信息失败')
+    console.error('加载文件结构失败:', error)
+    ElMessage.error('加载文件列表失败')
+    fileList.value = []
   } finally {
     isLoading.value = false
   }
 }
 
-// 加载预览内容
-const loadPreview = async () => {
-  if (!currentFileId.value || !canPreview.value) return
+// 选择文件进行预览
+const selectFileForPreview = async (file: FileVO) => {
+  selectedFile.value = file
+  await loadFilePreview(file)
+}
 
+// 加载文件预览
+const loadFilePreview = async (file: FileVO) => {
   try {
     isLoading.value = true
-    const response = await previewFile(currentFileId.value)
+    previewContent.value = ''
+    previewUrl.value = ''
+    previewType.value = 'unsupported'
+
+    console.log('开始预览文件:', file.originalName, '文件类型:', file.fileType)
+
+    // 判断文件类型并设置预览方式
+    const fileType = file.fileType?.toLowerCase() || ''
+    const fileName = file.originalName?.toLowerCase() || ''
     
-    if (response.data && response.data.status === 'success') {
-      previewData.value = response.data.data
-      previewContent.value = response.data.data.previewContent || ''
+    if (isImageFile(fileType, fileName)) {
+      previewType.value = 'image'
+      await loadImagePreview(file)
+    } else if (isPdfFile(fileType, fileName)) {
+      previewType.value = 'pdf'
+      await loadPdfPreview(file)
+    } else if (isTextFile(fileType, fileName)) {
+      previewType.value = 'text'
+      await loadTextPreview(file)
+    } else {
+      previewType.value = 'unsupported'
+      console.log('不支持预览的文件类型:', fileType)
     }
-  } catch (error) {
-    console.error('加载文件预览失败:', error)
-    ElMessage.error('文件预览加载失败')
+
+  } catch (error: any) {
+    console.error('文件预览失败:', error)
+    ElMessage.error('文件预览失败: ' + (error.message || '未知错误'))
+    previewType.value = 'unsupported'
   } finally {
     isLoading.value = false
   }
+}
+
+// 判断是否为图片文件
+const isImageFile = (fileType: string, fileName: string): boolean => {
+  return fileType.startsWith('image/') || 
+         ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'].some(ext => fileName.endsWith(ext))
+}
+
+// 判断是否为PDF文件
+const isPdfFile = (fileType: string, fileName: string): boolean => {
+  return fileType.includes('pdf') || fileName.endsWith('.pdf')
+}
+
+// 判断是否为文本文件
+const isTextFile = (fileType: string, fileName: string): boolean => {
+  return fileType.startsWith('text/') ||
+         fileType.includes('json') ||
+         fileType.includes('xml') ||
+         fileType.includes('csv') ||
+         fileType.includes('javascript') ||
+         ['.txt', '.md', '.json', '.xml', '.csv', '.html', '.css', '.js'].some(ext => fileName.endsWith(ext))
+}
+
+// 加载图片预览
+const loadImagePreview = async (file: FileVO) => {
+  const response = await previewFile(file.fileId)
+  const blob = new Blob([response.data], { type: response.headers['content-type'] || file.fileType || 'image/*' })
+  previewUrl.value = URL.createObjectURL(blob)
+  console.log('图片预览URL已生成')
+}
+
+// 加载PDF预览
+const loadPdfPreview = async (file: FileVO) => {
+  const response = await previewFile(file.fileId)
+  const blob = new Blob([response.data], { type: 'application/pdf' })
+  previewUrl.value = URL.createObjectURL(blob)
+  console.log('PDF预览URL已生成')
+}
+
+// 加载文本预览
+const loadTextPreview = async (file: FileVO) => {
+  const response = await previewFile(file.fileId)
+  const blob = new Blob([response.data], { type: 'text/plain' })
+  const text = await blob.text()
+  previewContent.value = text
+  console.log('文本预览内容已加载，长度:', text.length)
 }
 
 // 下载文件
-const handleDownload = async () => {
-  if (!currentFileId.value || !fileInfo.value) return
-
+const downloadFile = async (file: FileVO) => {
   try {
     isDownloading.value = true
-    const blob = await downloadFile(currentFileId.value)
+    console.log('开始下载文件:', file.originalName)
     
-    // 创建下载链接
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileInfo.value.originalName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
+    // 使用与ChatInput一致的下载方式
+    await apiDownloadFile(file.fileId, file.originalName)
     
     ElMessage.success('文件下载成功')
   } catch (error) {
@@ -143,180 +391,229 @@ const handleDownload = async () => {
 
 // 关闭预览
 const handleClose = () => {
-  isVisible.value = false
+  emit('update:visible', false)
   emit('close')
 }
 
-// 获取图片预览URL
-const getImagePreviewUrl = () => {
-  if (!currentFileId.value) return ''
-  return `/api/files/download/${currentFileId.value}`
-}
+// 监听会话变化
+watch(() => [props.uid, props.sid], async (newValues, oldValues) => {
+  const [newUid, newSid] = newValues || [0, 0]
+  const [oldUid, oldSid] = oldValues || [0, 0]
+  
+  if ((newUid !== oldUid || newSid !== oldSid) && newUid && newSid) {
+    selectedFile.value = null
+    previewContent.value = ''
+    await loadFileList()
+  }
+}, { immediate: true })
 
-// 获取PDF预览URL
-const getPdfPreviewUrl = () => {
-  if (!currentFileId.value) return ''
-  return `/api/files/preview/${currentFileId.value}`
-}
+// 监听可见性变化
+watch(() => props.visible, async (visible) => {
+  if (visible && props.uid && props.sid) {
+    await loadFileList()
+  }
+})
 </script>
 
-<template>
-  <div v-if="isVisible" class="file-preview-panel">
-    <el-card class="preview-card" shadow="never">
-      <!-- 文件预览头部 -->
-      <template #header>
-        <div class="preview-header">
-          <div class="file-info">
-            <span class="file-icon-large">{{ fileIcon }}</span>
-            <div class="file-details">
-              <div class="file-name" :title="fileInfo?.originalName">
-                {{ fileInfo?.originalName || '未知文件' }}
-              </div>
-              <div class="file-meta">
-                <el-tag size="small" type="info">{{ fileInfo?.fileType || 'unknown' }}</el-tag>
-                <span class="file-size">{{ fileInfo ? formatFileSize(fileInfo.fileSize) : '-' }}</span>
-              </div>
-            </div>
-          </div>
-          
-          <div class="preview-actions">
-            <el-button 
-              type="primary" 
-              :icon="Download" 
-              @click="handleDownload"
-              :loading="isDownloading"
-              size="small"
-            >
-              下载
-            </el-button>
-            <el-button 
-              type="default" 
-              :icon="Close" 
-              @click="handleClose"
-              size="small"
-            >
-              关闭
-            </el-button>
-          </div>
-        </div>
-      </template>
-
-      <!-- 文件预览内容 -->
-      <div class="preview-content" v-loading="isLoading">
-        <!-- 可预览的文件 -->
-        <template v-if="canPreview && !isLoading">
-          <!-- 图片预览 -->
-          <div v-if="isImageFile" class="image-preview">
-            <img 
-              :src="getImagePreviewUrl()" 
-              :alt="fileInfo?.originalName"
-              class="preview-image"
-              @error="() => ElMessage.error('图片加载失败')"
-            />
-          </div>
-
-          <!-- 文本文件预览 -->
-          <div v-else-if="isTextFile" class="text-preview">
-            <pre class="text-content">{{ previewContent }}</pre>
-          </div>
-
-          <!-- PDF预览 -->
-          <div v-else-if="isPdfFile" class="pdf-preview">
-            <iframe 
-              :src="getPdfPreviewUrl()"
-              class="pdf-frame"
-              frameborder="0"
-            ></iframe>
-          </div>
-
-          <!-- 其他可预览文件 -->
-          <div v-else class="general-preview">
-            <div class="preview-placeholder">
-              <el-icon class="preview-icon"><Document /></el-icon>
-              <p>该文件类型支持预览，但暂未实现具体的预览功能</p>
-              <p class="preview-hint">请点击下载按钮下载文件查看内容</p>
-            </div>
-          </div>
-        </template>
-
-        <!-- 不可预览的文件 -->
-        <template v-else-if="!isLoading">
-          <div class="no-preview">
-            <el-icon class="no-preview-icon"><Document /></el-icon>
-            <p class="no-preview-text">该文件类型不支持在线预览</p>
-            <p class="no-preview-hint">请下载文件到本地查看</p>
-            <el-button 
-              type="primary" 
-              :icon="Download" 
-              @click="handleDownload"
-              :loading="isDownloading"
-            >
-              立即下载
-            </el-button>
-          </div>
-        </template>
-
-        <!-- 加载状态 -->
-        <template v-if="isLoading">
-          <div class="loading-state">
-            <p>正在加载文件预览...</p>
-          </div>
-        </template>
-      </div>
-    </el-card>
-  </div>
-</template>
-
 <style scoped>
-.file-preview-panel {
+.file-preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 55%;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background-color: white;
+  border-left: 1px solid #e4e7ed;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+}
+
+.side-panel-container {
   width: 100%;
   height: 100%;
   display: flex;
-  flex-direction: column;
+  background-color: white;
 }
 
-.preview-card {
-  height: 100%;
+.directory-panel {
+  width: 250px;
+  background-color: #fafafa;
+  border-right: 1px solid #e4e7ed;
   display: flex;
   flex-direction: column;
+  transition: width 0.3s ease;
 }
 
-.preview-card :deep(.el-card__body) {
+.directory-panel.collapsed {
+  width: 50px;
+}
+
+.directory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #e4e7ed;
+  background-color: #f5f7fa;
+}
+
+.directory-header.collapsed {
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title-icon {
+  color: #409eff;
+  font-size: 18px;
+}
+
+.title-text {
+  font-weight: 500;
+  color: #303133;
+  font-size: 14px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.header-actions.vertical {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.collapsed-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  align-items: center;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #606266;
+  background-color: transparent;
+  border: 1px solid transparent;
+}
+
+.menu-item:hover {
+  background-color: #f5f7fa;
+  border-color: #e4e7ed;
+  color: #409eff;
+}
+
+.menu-item:active {
+  background-color: #e4e7ed;
+}
+
+.menu-item.loading {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.menu-item.loading .el-icon {
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.directory-content {
   flex: 1;
-  padding: 0;
   overflow: hidden;
 }
 
-.preview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+.file-list {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px;
 }
 
-.file-info {
+.empty-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
+  justify-content: center;
+  height: 200px;
+  color: #909399;
 }
 
-.file-icon-large {
-  font-size: 32px;
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  color: #dcdfe6;
+}
+
+.empty-text {
+  font-size: 14px;
+  margin: 0 0 8px 0;
+  color: #606266;
+}
+
+.empty-hint {
+  font-size: 12px;
+  margin: 0;
+  color: #909399;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  margin-bottom: 4px;
+}
+
+.file-item:hover {
+  background-color: #f5f7fa;
+  border-color: #e4e7ed;
+}
+
+.file-item.active {
+  background-color: #ecf5ff;
+  border-color: #409eff;
+}
+
+.file-item:last-child {
+  margin-bottom: 0;
+}
+
+.file-icon {
+  margin-right: 8px;
   flex-shrink: 0;
 }
 
-.file-details {
+.file-info {
   flex: 1;
   min-width: 0;
 }
 
 .file-name {
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 500;
   color: #303133;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -325,48 +622,131 @@ const getPdfPreviewUrl = () => {
 .file-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  font-size: 10px;
+  color: #909399;
+}
+
+.file-type {
+  background-color: #f0f2f5;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9px;
 }
 
 .file-size {
+  font-size: 9px;
+}
+
+.separator {
+  margin: 0 2px;
+}
+
+.file-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.file-item:hover .file-actions {
+  opacity: 1;
+}
+
+.file-actions .el-button {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.explorer-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.explorer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #e4e7ed;
+  background-color: white;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 4px 0;
+}
+
+.file-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   color: #909399;
 }
 
-.preview-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
+.file-size {
+  font-size: 12px;
 }
 
 .preview-content {
-  height: 100%;
+  flex: 1;
   overflow: auto;
-  position: relative;
+  padding: 16px;
+  background-color: white;
 }
 
 /* 图片预览样式 */
 .image-preview {
-  display: flex;
-  justify-content: center;
-  align-items: center;
   height: 100%;
-  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
 }
 
 .preview-image {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* PDF预览样式 */
+.pdf-preview {
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #f8f9fa;
+}
+
+.pdf-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 8px;
 }
 
 /* 文本预览样式 */
 .text-preview {
   height: 100%;
-  padding: 20px;
 }
 
 .text-content {
@@ -385,118 +765,72 @@ const getPdfPreviewUrl = () => {
   margin: 0;
 }
 
-/* PDF预览样式 */
-.pdf-preview {
-  height: 100%;
-  padding: 20px;
-}
-
-.pdf-frame {
-  width: 100%;
-  height: 100%;
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
-}
-
-/* 通用预览样式 */
-.general-preview,
 .no-preview {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
-  padding: 40px;
-  text-align: center;
   color: #909399;
 }
 
-.preview-icon,
 .no-preview-icon {
-  font-size: 64px;
-  color: #c0c4cc;
+  font-size: 48px;
   margin-bottom: 16px;
-}
-
-.preview-hint,
-.no-preview-hint {
-  font-size: 12px;
-  color: #c0c4cc;
-  margin-top: 8px;
+  color: #dcdfe6;
 }
 
 .no-preview-text {
-  font-size: 16px;
-  margin-bottom: 8px;
+  font-size: 14px;
+  margin: 0 0 16px 0;
+  color: #606266;
 }
 
-/* 加载状态样式 */
-.loading-state {
+.preview-placeholder {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
   height: 100%;
   color: #909399;
 }
 
-/* 滚动条样式 */
-.preview-content::-webkit-scrollbar,
-.text-content::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.placeholder-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  color: #dcdfe6;
 }
 
+.placeholder-text {
+  font-size: 14px;
+  margin: 0;
+  color: #606266;
+}
+
+/* 滚动条样式 */
+.file-list::-webkit-scrollbar,
+.preview-content::-webkit-scrollbar,
+.text-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.file-list::-webkit-scrollbar-track,
 .preview-content::-webkit-scrollbar-track,
 .text-content::-webkit-scrollbar-track {
   background: #f1f1f1;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
+.file-list::-webkit-scrollbar-thumb,
 .preview-content::-webkit-scrollbar-thumb,
 .text-content::-webkit-scrollbar-thumb {
   background: #c1c1c1;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
+.file-list::-webkit-scrollbar-thumb:hover,
 .preview-content::-webkit-scrollbar-thumb:hover,
 .text-content::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .preview-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-
-  .file-info {
-    justify-content: center;
-  }
-
-  .preview-actions {
-    justify-content: center;
-  }
-
-  .image-preview,
-  .text-preview,
-  .pdf-preview {
-    padding: 12px;
-  }
-
-  .general-preview,
-  .no-preview {
-    padding: 20px;
-  }
-
-  .file-icon-large {
-    font-size: 28px;
-  }
-
-  .preview-icon,
-  .no-preview-icon {
-    font-size: 48px;
-  }
 }
 </style>

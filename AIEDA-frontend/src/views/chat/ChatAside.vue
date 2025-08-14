@@ -1,6 +1,6 @@
 <!-- ChatAside.vue -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ElButton, ElIcon, ElScrollbar } from 'element-plus'
 import { Plus, Operation } from '@element-plus/icons-vue'
 import SessionItem from './SessionItem.vue'
@@ -11,6 +11,7 @@ const props = defineProps<{
   sessions: SessionRecord[]
   currentSessionId: number
   isLoading: boolean
+  forceCollapsed?: boolean // 新增：强制收起状态
 }>()
 
 // 传递给父组件的事件
@@ -22,6 +23,13 @@ const emit = defineEmits<{
 }>()
 
 const sidebarOpen = ref(true)
+
+// 监听强制收起状态
+watch(() => props.forceCollapsed, (newValue: boolean | undefined) => {
+  if (newValue !== undefined) {
+    sidebarOpen.value = !newValue
+  }
+})
 </script>
 
 <template>
@@ -40,7 +48,8 @@ const sidebarOpen = ref(true)
       </el-button>
       <el-button 
         plain 
-        round 
+        size="small"
+        circle
         @click="sidebarOpen = !sidebarOpen" 
         :icon="sidebarOpen ? Operation : Operation" 
         class="sidebar-toggle"
@@ -78,7 +87,7 @@ const sidebarOpen = ref(true)
 
 <style scoped>
 .chat-aside {
-  width: 280px;
+  width: 180px;
   height: 100%;
   border-right: 1px solid #e0e0e0;
   background-color: #f8f9fa;
@@ -87,7 +96,7 @@ const sidebarOpen = ref(true)
 }
 
 .chat-aside.collapsed {
-  width: 80px;
+  width: 48px; /* 相应减小收起状态的宽度 (80 * 0.6 = 48) */
 }
 
 .chat-aside-header {
@@ -101,7 +110,9 @@ const sidebarOpen = ref(true)
 
 .sidebar-toggle {
   flex-shrink: 0;
-  min-width: 40px;
+  min-width: 22px;
+  width: 22px;
+  height: 22px;
 }
 
 .chat-sessions {

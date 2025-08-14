@@ -1,8 +1,8 @@
 import axios from 'axios'
 
 // 导出基础URL配置，方便其他地方使用
-export const BASE_URL = "http://localhost:8080"
-// export const BASE_URL = ""
+export const BASE_URL = import.meta.env.VITE_BASE_URL
+export const LLM_BASE_URL = import.meta.env.VITE_LLM_BASE_URL
 
 const service = axios.create({
     baseURL: BASE_URL,
@@ -37,6 +37,11 @@ const createServiceWithTimeout = (timeout: number) => {
     // 为自定义实例添加响应拦截器
     customService.interceptors.response.use(
         response => {
+            // 文件下载等blob类型响应直接返回，不进行code判断
+            if (response.config.responseType === 'blob') {
+                return response
+            }
+            
             // 登录接口，自动存储token
             if (response.config.url && response.config.url.includes('/login') && response.data.code === '200') {
                 sessionStorage.setItem('token', response.data.data)
@@ -84,6 +89,11 @@ service.interceptors.request.use(
 // 响应拦截器：统一处理后端code为200才算成功
 service.interceptors.response.use(
     response => {
+        // 文件下载等blob类型响应直接返回，不进行code判断
+        if (response.config.responseType === 'blob') {
+            return response
+        }
+        
         // 登录接口，自动存储token
         if (response.config.url && response.config.url.includes('/login') && response.data.code === '200') {
             // 登录成功，保存token

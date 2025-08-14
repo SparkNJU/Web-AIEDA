@@ -4,6 +4,7 @@ import { ElCard, ElMenu, ElMenuItem } from 'element-plus'
 // 接收参数
 const props = defineProps<{
   suggestions: string[]
+  hasFiles?: boolean // 新增：是否有文件上传
 }>()
 
 // 事件传递
@@ -12,7 +13,7 @@ const emit = defineEmits<{
 }>()
 
 // 使用props防止TypeScript警告
-const { suggestions } = props
+const { suggestions, hasFiles } = props
 </script>
 
 <template>
@@ -20,7 +21,7 @@ const { suggestions } = props
     <el-card class="welcome-card" shadow="never">
       <div class="welcome-content">
         <h2>🤖 智能助手</h2>
-        <p>欢迎使用AIEDA平台的智能助手！我可以帮助您解答各种问题。</p>
+        <p>欢迎使用CPPO平台的智能助手！我可以帮助您解答各种问题。</p>
         
         <div class="suggestions">
           <h3>💡 推荐问题</h3>
@@ -31,7 +32,7 @@ const { suggestions } = props
             @select="(index: string) => emit('insert-question', suggestions[parseInt(index)])"
           >
             <el-menu-item 
-              v-for="(suggestion, index) in suggestions" 
+              v-for="(suggestion, index) in (hasFiles ? suggestions.slice(0, 2) : suggestions)" 
               :key="index"
               :index="index.toString()"
               class="suggestion-item"

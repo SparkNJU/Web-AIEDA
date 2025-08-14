@@ -1,4 +1,4 @@
-import { axios, BASE_URL, getToken } from '../utils/request'
+import { axios } from '../utils/request'
 
 // 文件相关接口的前缀
 const FILE_MODULE = '/api/files'
@@ -61,21 +61,108 @@ export const uploadFile = (data: FileUploadRequestVO) => {
   })
 }
 
-// 下载文件
-export const downloadFile = (fid: string): Promise<Blob> => {
-  return axios.get(`${FILE_MODULE}/download/${fid}`, {
+// 下载文件 - 通过后端代理下载（推荐方式）
+export const downloadFile = async (fid: string, fileName?: string) => {
+  try {
+    const response = await axios.get(`${FILE_MODULE}/download/${fid}`, {
+      responseType: 'blob'
+    })
+    
+    // 创建下载链接
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    
+    // 尝试从响应头获取文件名，否则使用传入的文件名或默认名称
+    const contentDisposition = response.headers['content-disposition']
+    let downloadFileName = fileName || 'download'
+    
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?([^"]+)"?/)
+      if (match) {
+        downloadFileName = match[1]
+      }
+    }
+    
+    link.download = downloadFileName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    
+  } catch (error) {
+    console.error('文件下载失败:', error)
+    throw error
+  }
+}
+
+// 下载文件 - 直接从大模型服务下载（已废弃，改为通过后端代理）
+export const downloadFileFromLLM = (fid: string) => {
+  console.warn('downloadFileFromLLM 已废弃，请使用 downloadFile 方法')
+  // 为了向后兼容，调用新的下载方法
+  return downloadFile(fid)
+}
+
+// 获取文件下载URL
+export const getDownloadUrl = (fid: string) => {
+  return axios.get(`${FILE_MODULE}/download-url/${fid}`)
+}
+
+// 预览文件 - 通过后端代理获取二进制流进行预览
+export const previewFile = (fid: string) => {
+  return axios.get(`${FILE_MODULE}/preview/${fid}`, {
     responseType: 'blob'
   })
 }
 
-// 预览文件
-export const previewFile = (fid: string) => {
-  return axios.get(`${FILE_MODULE}/preview/${fid}`)
+// 预览文件（兼容接口）- 通过后端代理调用大模型服务
+export const previewFileLegacy = (fid: string) => {
+  return axios.get(`${FILE_MODULE}/preview-legacy/${fid}`)
+}
+
+// 获取文件预览URL
+export const getPreviewUrl = (fid: string) => {
+  return axios.get(`${FILE_MODULE}/preview-url/${fid}`)
 }
 
 // 获取文件列表
 export const getFileList = (params: FileListRequestVO) => {
   return axios.get(`${FILE_MODULE}/list`, { params })
+}
+
+// 获取文件结构（从大模型服务）
+export const getFileStructure = (params: FileListRequestVO) => {
+  return axios.get(`${FILE_MODULE}/structure`, { params })
+}
+
+// 通过本地路径访问文件
+export const getLocalFile = (uid: number, sid: number, filename: string) => {
+  return axios.get(`${FILE_MODULE}/local/${uid}/${sid}/${filename}`, {
+    responseType: 'blob'
+  })
+}
+
+// 通过完整本地路径读取文件内容（文本类型）
+export const getLocalFileByPath = (filePath: string) => {
+  return axios.get(`${FILE_MODULE}/local-path`, {
+    params: { path: filePath },
+    responseType: 'text'
+  })
+}
+
+// 通过完整本地路径下载文件
+export const downloadLocalFileByPath = (filePath: string) => {
+  return axios.get(`${FILE_MODULE}/download-local-path`, {
+    params: { path: filePath },
+    responseType: 'blob'
+  })
+}
+
+// 获取本地文件预览内容（文本类型）
+export const getLocalFilePreview = (uid: number, sid: number, filename: string) => {
+  return axios.get(`${FILE_MODULE}/local/${uid}/${sid}/${filename}`, {
+    responseType: 'text'
+  })
 }
 
 // 删除文件
@@ -86,35 +173,6 @@ export const deleteFile = (fid: string) => {
 // 获取文件信息
 export const getFileInfo = (fid: string) => {
   return axios.get(`${FILE_MODULE}/info/${fid}`)
-}
-
-// 带文件引用的流式聊天
-export const sendMessageWithFilesStream = async (data: {
-  uid: number
-  sid: number
-  content: string
-  fileReferences?: string[]
-}): Promise<Response> => {
-  const token = getToken()
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json'
-  }
-  
-  if (token) {
-    headers['token'] = token
-  }
-  
-  const response = await fetch(`${BASE_URL}/api/chat/messages/stream-with-files`, {
-    method: 'POST',
-    headers: headers,
-    body: JSON.stringify(data)
-  })
-  
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`)
-  }
-  
-  return response
 }
 
 // 格式化文件大小
@@ -132,9 +190,12 @@ export const getFileIcon = (fileType: string): string => {
   
   if (type.includes('image')) return '🖼️'
   if (type.includes('pdf')) return '📄'
-  if (type.includes('word') || type.includes('doc') || type.includes('msword')) return '📝'
-  if (type.includes('excel') || type.includes('sheet') || type.includes('spreadsheet')) return '📊'
-  if (type.includes('powerpoint') || type.includes('presentation')) return '📺'
+  if (type.includes('word') || type.includes('doc') || type.includes('msword') || 
+      type.includes('wordprocessingml')) return '📝'
+  if (type.includes('excel') || type.includes('sheet') || type.includes('spreadsheet') || 
+      type.includes('spreadsheetml')) return '📊'
+  if (type.includes('powerpoint') || type.includes('presentation') || 
+      type.includes('presentationml')) return '📺'
   if (type.includes('text') || type.includes('txt') || type.includes('plain')) return '📃'
   if (type.includes('markdown') || type.includes('md')) return '📋'
   if (type.includes('json')) return '🔧'
@@ -152,22 +213,49 @@ export const getFileIcon = (fileType: string): string => {
 export const canPreviewFile = (fileType: string): boolean => {
   const type = fileType.toLowerCase()
   
-  // 可预览的文件类型
+  // 可预览的文件类型（与上传支持的文件类型保持一致）
   const previewableTypes = [
-    // 文本类型
+    // 图片类型
+    'image/',
+    
+    // 文本类型 - MIME 类型
     'text/', 'application/json', 'application/xml', 'text/csv',
     'text/plain', 'text/html', 'text/css', 'text/javascript',
     'application/javascript', 'text/markdown', 'text/x-markdown',
     
-    // 图片类型
-    'image/',
-    
-    // 文档类型
+    // PDF文档
     'application/pdf',
     
-    // 其他常见格式
+    // Office文档（部分可预览）
+    'application/msword', // .doc
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+    'application/vnd.ms-excel', // .xls
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/vnd.ms-powerpoint', // .ppt
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+    
+    // 其他格式
     'application/rtf'
   ]
   
-  return previewableTypes.some(previewType => type.startsWith(previewType) || type.includes(previewType))
+  // 可预览的文件扩展名
+  const previewableExtensions = [
+    '.txt', '.md', '.json', '.xml', '.csv', '.html', '.css', '.js',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.rtf'
+  ]
+  
+  // 检查 MIME 类型或扩展名
+  const isMimeTypeSupported = previewableTypes.some(previewType => 
+    type.startsWith(previewType) || type.includes(previewType)
+  )
+  
+  const isExtensionSupported = previewableExtensions.some(ext => 
+    type === ext || type.endsWith(ext)
+  )
+  
+  // 图片类型特殊处理：支持常见图片扩展名
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg']
+  const isImageExtension = imageExtensions.some(ext => type === ext || type.endsWith(ext))
+  
+  return isMimeTypeSupported || isExtensionSupported || isImageExtension
 }

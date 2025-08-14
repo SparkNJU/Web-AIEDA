@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { ElInput, ElButton, ElMessageBox, ElMessage, ElIcon } from 'element-plus'
+import { ElInput, ElButton, ElMessageBox, ElMessage, ElIcon, ElSelect, ElOption } from 'element-plus'
 import { ArrowUp, View, Download, Delete, MoreFilled } from '@element-plus/icons-vue'
 import { ref, watch } from 'vue'
 import FileUpload from '../../components/FileUpload.vue'
 import type { FileVO } from '../../api/file'
 import { formatFileSize, downloadFile as apiDownloadFile, getFileList, deleteFile as apiDeleteFile } from '../../api/file'
+
+// Agent类型定义
+export type AgentType = 'orchestrator' | 'dynamic'
+
+// 输入类型定义
+export type InputType = 'question' | 'config' | 'intervention' | 'delete'
 
 // 接收参数
 const props = defineProps<{
@@ -19,17 +25,30 @@ const props = defineProps<{
 // 事件传递
 const emit = defineEmits<{
   'update:input-message': [value: string]
-  'send-message': [message: string, files?: FileVO[]]
+  'send-message': [message: string, agentType: AgentType, inputType: InputType, files?: FileVO[]]
+  'open-file-preview': [file: FileVO] // 新增：文件预览事件
 }>()
 
 // 响应式数据
 const uploadedFiles = ref<FileVO[]>([])
 const fileUploadRef = ref<InstanceType<typeof FileUpload>>()
+const selectedAgentType = ref<AgentType>('orchestrator') // 默认使用orchestrator
+const hasConfigSent = ref<Map<number, boolean>>(new Map()) // 跟踪每个会话是否已发送配置
+
+// Agent类型选项
+const agentOptions = [
+  { label: '编排代理 (Orchestrator)', value: 'orchestrator' as AgentType },
+  { label: '动态代理 (Dynamic)', value: 'dynamic' as AgentType }
+]
 
 // 监听会话ID变化，加载对应的文件列表
 watch(() => props.sid, async (newSid, oldSid) => {
   if (newSid !== oldSid && newSid > 0) {
     await loadSessionFiles()
+    // 重置当前会话的配置发送状态
+    if (!hasConfigSent.value.has(newSid)) {
+      hasConfigSent.value.set(newSid, false)
+    }
   }
 }, { immediate: true })
 
@@ -66,9 +85,26 @@ const handleKeyup = (e: KeyboardEvent) => {
 }
 
 // 发送消息（点击按钮）
-const sendMessage = () => {
+const sendMessage = async () => {
   if (props.inputMessage.trim() && !props.inputDisabled) {
-    emit('send-message', props.inputMessage.trim(), uploadedFiles.value.length > 0 ? uploadedFiles.value : undefined)
+    const sessionId = props.sid
+    const userMessage = props.inputMessage.trim()
+    
+    // 检查是否需要先发送配置（隐式发送，用户不可见）
+    if (!hasConfigSent.value.get(sessionId)) {
+      console.log('首次发送问题，先隐式发送配置')
+      // 隐式发送配置信息，不显示给用户
+      emit('send-message', '', selectedAgentType.value, 'config' as InputType, undefined)
+      
+      // 标记配置已发送
+      hasConfigSent.value.set(sessionId, true)
+      
+      // 等待一小段时间确保配置处理完成
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+    
+    // 发送用户的实际问题（总是使用 question 类型）
+    emit('send-message', userMessage, selectedAgentType.value, 'question' as InputType, uploadedFiles.value.length > 0 ? uploadedFiles.value : undefined)
     // 注意：不再清空文件列表，交由用户手动管理
   }
 }
@@ -92,9 +128,14 @@ const handleUploadError = (error: string) => {
 
 // 处理文件预览
 const handleFilePreview = (file: FileVO) => {
-  console.log('预览文件:', file)
-  // 这里可以打开文件预览组件或新窗口
-  // 可以触发一个事件让父组件处理
+  console.log('🎯 ChatInput: handleFilePreview 函数被调用', {
+    file,
+    fileId: file.fileId,
+    fileName: file.originalName
+  })
+  
+  // 向父组件发送文件预览事件
+  emit('open-file-preview', file)
 }
 
 // 删除单个文件
@@ -134,19 +175,12 @@ const getFileExtension = (filename: string) => {
 // 下载文件
 const downloadFile = async (file: FileVO) => {
   try {
-    const blob = await apiDownloadFile(file.fileId)
+    console.log('开始下载文件:', file.fileId)
     
-    // 创建下载链接
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = file.originalName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
+    // 通过后端代理下载文件
+    await apiDownloadFile(file.fileId, file.originalName)
     
-    ElMessage.success('文件下载成功')
+    ElMessage.success('文件下载已开始')
   } catch (error) {
     console.error('文件下载失败:', error)
     ElMessage.error('文件下载失败')
@@ -187,16 +221,17 @@ const downloadFile = async (file: FileVO) => {
           <div class="file-actions-menu">
             <el-button 
               size="small"
-              text
+              link
               @click="handleFilePreview(file)"
               title="预览"
               class="action-btn"
             >
               <el-icon><View /></el-icon>
             </el-button>
+            
             <el-button 
               size="small"
-              text
+              link
               @click="downloadFile(file)"
               title="下载"
               class="action-btn"
@@ -205,7 +240,7 @@ const downloadFile = async (file: FileVO) => {
             </el-button>
             <el-button 
               size="small"
-              text
+              link
               @click="removeFile(file)"
               title="删除"
               class="action-btn delete-btn"
@@ -232,6 +267,22 @@ const downloadFile = async (file: FileVO) => {
         class="message-input"
       />
       
+      <!-- Agent类型选择器 -->
+      <el-select
+        v-model="selectedAgentType"
+        placeholder="选择代理"
+        class="agent-selector"
+        size="large"
+        :disabled="inputDisabled"
+      >
+        <el-option
+          v-for="option in agentOptions"
+          :key="option.value"
+          :label="option.label"
+          :value="option.value"
+        />
+      </el-select>
+      
       <!-- 文件上传组件，直接嵌入到按钮位置 -->
       <FileUpload
         ref="fileUploadRef"
@@ -250,16 +301,6 @@ const downloadFile = async (file: FileVO) => {
         @upload-error="handleUploadError"
         @file-preview="handleFilePreview"
       />
-
-      <!-- 临时调试按钮 -->
-      <!-- <el-button 
-        type="warning"
-        @click="debugShowUpload"
-        size="small"
-        style="margin-left: 4px;"
-      >
-        DEBUG
-      </el-button> -->
 
       <!-- 发送按钮 -->
       <el-button 
@@ -283,6 +324,9 @@ const downloadFile = async (file: FileVO) => {
         <span>按 Enter 发送，Shift + Enter 换行</span>
         <span v-if="uploadedFiles.length > 0" class="file-count">
           · 已选择 {{ uploadedFiles.length }} 个文件
+        </span>
+        <span class="agent-hint">
+          · {{ agentOptions.find(opt => opt.value === selectedAgentType)?.label }}
         </span>
       </div>
     </div>
@@ -447,6 +491,11 @@ const downloadFile = async (file: FileVO) => {
   flex: 1;
 }
 
+.agent-selector {
+  flex-shrink: 0;
+  width: 120px;
+}
+
 .file-button {
   flex-shrink: 0;
   height: 40px;
@@ -477,6 +526,11 @@ const downloadFile = async (file: FileVO) => {
   font-weight: 500;
 }
 
+.agent-hint {
+  color: #666;
+  font-weight: 400;
+}
+
 :deep(.el-textarea__inner) {
   border-radius: 8px;
   border-color: #dcdfe6;
@@ -487,6 +541,31 @@ const downloadFile = async (file: FileVO) => {
 
 :deep(.el-textarea__inner):focus {
   border-color: rgb(102, 8, 116);
+}
+
+/* Agent选择器样式 */
+:deep(.agent-selector .el-select__wrapper) {
+  border-radius: 8px;
+  border-color: #dcdfe6;
+  height: 40px;
+}
+
+:deep(.agent-selector .el-select__wrapper.is-focused) {
+  border-color: rgb(102, 8, 116);
+}
+
+:deep(.agent-selector .el-select__placeholder) {
+  font-size: 14px;
+  color: #a8abb2;
+}
+
+/* 文件预览 Popover 样式 */
+:deep(.file-preview-popover) {
+  --el-popover-padding: 0;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  max-height: 600px;
+  overflow: hidden;
 }
 
 /* 响应式设计 */

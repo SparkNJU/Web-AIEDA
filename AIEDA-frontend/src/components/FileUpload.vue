@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { ElUpload, ElButton, ElIcon, ElTag, ElMessage, ElMessageBox, ElPopover } from 'element-plus'
-import { Upload, Delete, Close, Paperclip } from '@element-plus/icons-vue'
-import { uploadFile, type FileVO, formatFileSize, getFileIcon, downloadFile as apiDownloadFile } from '../api/file'
+import { ElUpload, ElButton, ElIcon, ElMessage, ElPopover } from 'element-plus'
+import { Upload, Close, Paperclip } from '@element-plus/icons-vue'
+import { uploadFile, type FileVO } from '../api/file'
 
 // 组件属性
 const props = defineProps<{
@@ -191,34 +191,6 @@ const customUpload = async (options: any) => {
   }
 }
 
-// 删除文件
-const removeFile = async (file: FileVO, index: number) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除文件 "${file.originalName}" 吗？`,
-      '删除文件',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    // TODO: 调用删除文件API
-    // await deleteFile(file.fileId)
-    
-    uploadedFiles.value.splice(index, 1)
-    emit('files-change', [...uploadedFiles.value])
-    
-    ElMessage.success('文件删除成功')
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('文件删除失败')
-      console.error('删除文件错误:', error)
-    }
-  }
-}
-
 // 清空所有文件
 const clearAllFiles = () => {
   uploadedFiles.value = []
@@ -237,34 +209,6 @@ const showUpload = () => {
 const hideUpload = () => {
   console.log('FileUpload: hideUpload 方法被调用')
   showUploadForm.value = false
-}
-
-// 预览文件
-const previewFile = (file: FileVO) => {
-  // 触发预览事件，让父组件处理
-  emit('file-preview', file)
-}
-
-// 下载文件
-const downloadFile = async (file: FileVO) => {
-  try {
-    const blob = await apiDownloadFile(file.fileId)
-    
-    // 创建下载链接
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = file.originalName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-    
-    ElMessage.success('文件下载成功')
-  } catch (error) {
-    console.error('文件下载失败:', error)
-    ElMessage.error('文件下载失败')
-  }
 }
 
 // 获取上传的文件列表

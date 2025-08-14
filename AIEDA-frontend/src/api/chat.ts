@@ -27,6 +27,8 @@ export interface ChatRequestVO {
   content: string
   sid: number
   fileReferences?: string[] // 添加文件引用
+  agentType?: 'orchestrator' | 'dynamic' // 添加Agent类型参数
+  inputType?: 'question' | 'config' | 'intervention' | 'delete' // 添加输入类型参数
 }
 
 export interface CreateSessionRequestVO {
