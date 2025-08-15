@@ -426,8 +426,8 @@ public class ChatServiceImpl implements ChatService {
         System.out.println(String.format("事件详情 - session_id: %s, user_id: %s, event: %s, tool: %s",
             eventSessionId, userId, eventType, tool));
 
-        // 检查是否是结束事件（agent.loop_end + orchestrator）
-        if ("agent.loop_end".equals(eventType) && "orchestrator".equals(tool)) {
+        // 检查是否是结束事件（agent.loop_end）
+        if ("agent.loop_end".equals(eventType)) {
             log.info("检测到agent.loop_end事件，AI回复生成完成");
             System.out.println("检测到agent.loop_end事件，AI回复生成完成");
             return true; // 生成完成
@@ -832,6 +832,12 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType) {
+        // 使用默认配置
+        return sendConfigMessage(uid, sid, agentType, null, null, null);
+    }
+
+    @Override
+    public SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType, String apiKey, String baseUrl, String model) {
         // 创建SSE发射器，短超时即可因为不需要等待流式回复
         SseEmitter emitter = new SseEmitter(10000L);
 
@@ -840,7 +846,7 @@ public class ChatServiceImpl implements ChatService {
 
         // 异步处理配置发送
         CompletableFuture.runAsync(() -> {
-            processConfigMessage(emitter, uid, sid, agentType);
+            processConfigMessage(emitter, uid, sid, agentType, apiKey, baseUrl, model);
         });
 
         // 设置超时和错误处理
@@ -861,7 +867,15 @@ public class ChatServiceImpl implements ChatService {
      * 处理配置消息发送（不等待流式回复）
      */
     private void processConfigMessage(SseEmitter emitter, Integer uid, Integer sid, String agentType) {
+        processConfigMessage(emitter, uid, sid, agentType, null, null, null);
+    }
+
+    /**
+     * 处理配置消息发送（支持自定义配置，不等待流式回复）
+     */
+    private void processConfigMessage(SseEmitter emitter, Integer uid, Integer sid, String agentType, String customApiKey, String customBaseUrl, String customModel) {
         String userInputUrl = "http://localhost:8000/api/v1/user/input";
+        int nextSeq = getNextSequence(sid);
 
         try {
             // 发送开始信号
@@ -879,9 +893,10 @@ public class ChatServiceImpl implements ChatService {
             metadata.put("agent_type", agentType != null ? agentType : "orchestrator");
             
             var llmConfig = new java.util.HashMap<String, Object>();
-            llmConfig.put("api_key", openaiApiKey);
-            llmConfig.put("base_url", openaiBaseUrl);
-            llmConfig.put("model", openaiModel);
+            // 使用自定义配置或默认配置
+            llmConfig.put("api_key", customApiKey != null ? customApiKey : openaiApiKey);
+            llmConfig.put("base_url", customBaseUrl != null ? customBaseUrl : openaiBaseUrl);
+            llmConfig.put("model", customModel != null ? customModel : openaiModel);
             metadata.put("llm_config", llmConfig);
             
             // 添加其他配置参数
@@ -891,18 +906,54 @@ public class ChatServiceImpl implements ChatService {
             
             inputRequest.put("metadata", metadata);
 
+            // 保存配置消息到数据库
+            Record configRecord = new Record();
+            configRecord.setUid(uid);
+            configRecord.setSid(sid);
+            configRecord.setDirection(true); // 用户发起的配置
+            configRecord.setContent(String.format("配置LLM: %s (Agent: %s)", 
+                customModel != null ? customModel : openaiModel, 
+                agentType != null ? agentType : "orchestrator"));
+            configRecord.setSequence(nextSeq);
+            configRecord.setType(MessageTypeConstant.CONFIG);
+            configRecord.setCreateTime(LocalDateTime.now());
+            recordRepository.save(configRecord);
+
             // 发送配置到LLM
             var inputResponse = restTemplate.postForObject(userInputUrl, inputRequest, java.util.Map.class);
             
             if (inputResponse != null && "success".equals(inputResponse.get("status"))) {
                 // 配置成功
-                sendCompleteToFrontend(emitter, "LLM配置已更新", -1);
-                log.info("LLM配置发送成功 - uid: {}, sid: {}", uid, sid);
+                sendCompleteToFrontend(emitter, "LLM配置已更新", configRecord.getRid());
+                log.info("LLM配置发送成功 - uid: {}, sid: {}, model: {}", uid, sid, 
+                    customModel != null ? customModel : openaiModel);
             } else {
                 // 配置失败
                 sendErrorToFrontend(emitter, "LLM配置更新失败");
                 log.error("LLM配置发送失败 - uid: {}, sid: {}, response: {}", uid, sid, inputResponse);
             }
+
+        } catch (Exception e) {
+            log.error("发送配置消息失败", e);
+            sendErrorToFrontend(emitter, "配置失败: " + e.getMessage());
+        } finally {
+            // 确保连接被正确关闭
+            try {
+                emitter.complete();
+            } catch (Exception e) {
+                log.error("关闭配置SSE连接失败", e);
+            }
+        }
+    }
+
+    /**
+     * 获取下一个序列号
+     */
+    private int getNextSequence(Integer sid) {
+        List<Record> records = recordRepository.findBySidOrderBySequenceDesc(sid);
+        return records.isEmpty() ? 1 : records.get(0).getSequence() + 1;
+    }
+}
 
         } catch (Exception e) {
             log.error("发送配置消息失败", e);

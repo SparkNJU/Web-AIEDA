@@ -25,6 +25,25 @@ public class MessageTypeConstant {
     public static final int TOOL_EXECUTION_RESULT = 3;
 
     /**
+     * 配置消息（不可修改）
+     */
+    public static final int CONFIG = 4;
+
+    /**
+     * 软干预消息（不可修改）
+     */
+    public static final int SOFT_INTERVENTION = 5;
+
+    /**
+     * 硬干预消息（不可修改）
+     */
+    public static final int HARD_INTERVENTION = 6;
+
+    /**
+     * 删除会话（不可修改）
+     */
+    public static final int DELETE_SESSION = 7;
+    /**
      * 私有构造函数防止实例化
      */
     private MessageTypeConstant() {

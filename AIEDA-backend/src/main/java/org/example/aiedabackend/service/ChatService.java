@@ -48,6 +48,11 @@ public interface ChatService {
     SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType);
 
     /**
+     * 发送自定义配置消息（支持用户自定义的LLM配置）
+     */
+    SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType, String apiKey, String baseUrl, String model);
+
+    /**
      * 更新会话标题
      */
     boolean updateSessionTitle(Integer uid, Integer sid, String title);

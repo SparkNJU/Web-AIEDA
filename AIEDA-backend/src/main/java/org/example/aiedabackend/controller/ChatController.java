@@ -59,7 +59,15 @@ public class ChatController {
         
         // 如果是config类型，使用专门的配置处理方法
         if ("config".equals(inputType)) {
-            return chatService.sendConfigMessage(request.getUid(), request.getSid(), agentType);
+            // 检查是否有自定义配置参数
+            if (request.getApiKey() != null || request.getBaseUrl() != null || request.getModel() != null) {
+                // 使用自定义配置
+                return chatService.sendConfigMessage(request.getUid(), request.getSid(), agentType, 
+                                                   request.getApiKey(), request.getBaseUrl(), request.getModel());
+            } else {
+                // 使用默认配置
+                return chatService.sendConfigMessage(request.getUid(), request.getSid(), agentType);
+            }
         }
         
         // 其他类型的消息正常处理
