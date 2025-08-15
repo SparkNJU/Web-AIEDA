@@ -29,6 +29,10 @@ export interface ChatRequestVO {
   fileReferences?: string[] // 添加文件引用
   agentType?: 'orchestrator' | 'dynamic' // 添加Agent类型参数
   inputType?: 'question' | 'config' | 'intervention' | 'delete' // 添加输入类型参数
+  // LLM自定义配置字段（仅在inputType为config时使用）
+  apiKey?: string // 自定义API Key
+  baseUrl?: string // 自定义Base URL
+  model?: string // 自定义模型
 }
 
 export interface CreateSessionRequestVO {

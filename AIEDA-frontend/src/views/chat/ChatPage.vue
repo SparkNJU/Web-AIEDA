@@ -383,15 +383,39 @@ const handleSendMessageStream = async (messageToSend: string, files?: FileVO[], 
   }
 
   try {
-    // 使用统一的消息发送接口，支持带文件和不带文件
-    const response = await sendMessageStream({
+    // 解析配置信息（如果是config类型的消息）
+    let configData = null
+    let actualMessage = messageToSend
+    
+    if (inputType === 'config' && messageToSend) {
+      try {
+        const configRequest = JSON.parse(messageToSend)
+        configData = configRequest
+        actualMessage = "" // config类型的消息内容为空
+      } catch (e) {
+        console.warn('无法解析config消息:', e)
+      }
+    }
+
+    // 构造请求数据
+    const requestData: any = {
       uid: userId.value,
       sid: sessionId,
-      content: messageToSend,
+      content: actualMessage,
       fileReferences: files && files.length > 0 ? files.map(f => f.fileId) : undefined,
       agentType: agentType, // 传递Agent类型
       inputType: inputType // 传递输入类型
-    })
+    }
+    
+    // 如果是config类型且有配置数据，添加配置字段
+    if (inputType === 'config' && configData) {
+      requestData.apiKey = configData.apiKey
+      requestData.baseUrl = configData.baseUrl
+      requestData.model = configData.model
+    }
+
+    // 使用统一的消息发送接口
+    const response = await sendMessageStream(requestData)
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
@@ -653,6 +677,23 @@ const openFilePreview = (file: FileVO) => {
   asideCollapsed.value = true // 收起侧边栏
 }
 
+const openFileBrowser = () => {
+  // 打开文件浏览器，不指定特定文件
+  previewFile.value = null
+  previewFileId.value = ''
+  showFilePreview.value = true
+  asideCollapsed.value = true // 收起侧边栏
+}
+
+const toggleFilePreview = () => {
+  // 切换文件预览窗口的显示/隐藏状态
+  if (showFilePreview.value) {
+    closeFilePreview()
+  } else {
+    openFileBrowser()
+  }
+}
+
 const closeFilePreview = () => {
   showFilePreview.value = false
   previewFileId.value = ''
@@ -767,6 +808,8 @@ const scrollToBottom = () => {
             @update:input-message="(val: string) => inputMessage = val"
             @send-message="handleSendMessage"
             @open-file-preview="openFilePreview"
+            @toggle-file-preview="toggleFilePreview"
+            @create-session="handleCreateSession"
           />
         </div>
       </div>

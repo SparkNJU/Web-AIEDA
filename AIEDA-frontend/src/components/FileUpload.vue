@@ -19,6 +19,7 @@ const emit = defineEmits<{
   'upload-success': [file: FileVO]
   'upload-error': [error: string]
   'file-preview': [file: FileVO]
+  'create-session': [] // 新增：创建会话事件
 }>()
 
 // 响应式数据
@@ -122,6 +123,63 @@ const beforeUpload = (file: File) => {
   return true
 }
 
+// 执行实际的文件上传
+const performUpload = async (file: File, sessionId: number) => {
+  console.log('开始上传文件:', file.name, '会话ID:', sessionId)
+  
+  const response = await uploadFile({
+    uid: props.uid,
+    sid: sessionId,
+    file: file,
+    metadata: JSON.stringify({
+      originalName: file.name,
+      fileSize: file.size,
+      fileType: file.type
+    })
+  })
+
+  console.log('上传响应:', response)
+  
+  if (response.data && response.data.data) {
+    console.log('上传成功，文件数据:', response.data.data)
+    const fileVO: FileVO = response.data.data
+    uploadedFiles.value.push(fileVO)
+    
+    emit('files-change', [...uploadedFiles.value])
+    emit('upload-success', fileVO)
+    
+    ElMessage.success(`文件 "${file.name}" 上传成功`)
+    console.log('上传成功消息已显示')
+    
+    // 自动关闭上传表单
+    hideUpload()
+  } else {
+    console.error('响应格式错误，缺少 data 字段:', response)
+    throw new Error('响应格式错误')
+  }
+}
+
+// 等待会话创建完成的函数
+const waitForSession = (): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    const checkSession = () => {
+      if (props.sid !== 0) {
+        resolve(props.sid)
+      } else {
+        // 每100ms检查一次会话是否创建完成，最多等待10秒
+        setTimeout(checkSession, 100)
+      }
+    }
+    
+    // 设置10秒超时
+    setTimeout(() => {
+      reject(new Error('创建会话超时'))
+    }, 10000)
+    
+    checkSession()
+  })
+}
+
 // 自定义上传函数
 const customUpload = async (options: any) => {
   const { file } = options
@@ -133,54 +191,22 @@ const customUpload = async (options: any) => {
   isUploading.value = true
 
   try {
-    console.log('开始上传文件:', file.name)
-    console.log('上传参数:', {
-      uid: props.uid,
-      sid: props.sid,
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type
-    })
-
-    const response = await uploadFile({
-      uid: props.uid,
-      sid: props.sid,
-      file: file,
-      metadata: JSON.stringify({
-        originalName: file.name,
-        fileSize: file.size,
-        fileType: file.type
-      })
-    })
-
-    console.log('上传响应:', response)
-    console.log('响应数据结构:', {
-      hasData: !!response.data,
-      dataKeys: response.data ? Object.keys(response.data) : [],
-      fullResponse: response
-    })
-
-    // 由于响应拦截器已经处理了 code 判断，能到这里说明上传成功
-    // 直接从 response.data.data 获取文件信息
-    if (response.data && response.data.data) {
-      console.log('上传成功，文件数据:', response.data.data)
-      const fileVO: FileVO = response.data.data
-      uploadedFiles.value.push(fileVO)
-      console.log('当前文件列表长度:', uploadedFiles.value.length)
-      console.log('当前文件列表:', uploadedFiles.value)
+    let sessionId = props.sid
+    
+    // 如果没有会话ID（sid为0），先创建会话
+    if (sessionId === 0) {
+      console.log('没有会话ID，自动创建会话并继续上传')
       
-      emit('files-change', [...uploadedFiles.value])
-      emit('upload-success', fileVO)
+      // 触发创建会话事件
+      emit('create-session')
       
-      ElMessage.success(`文件 "${file.name}" 上传成功`)
-      console.log('上传成功消息已显示')
-      
-      // 自动关闭上传表单
-      hideUpload()
-    } else {
-      console.error('响应格式错误，缺少 data 字段:', response)
-      throw new Error('响应格式错误')
+      // 等待会话创建完成
+      sessionId = await waitForSession()
+      console.log('会话创建完成，ID:', sessionId)
     }
+    
+    // 执行文件上传
+    await performUpload(file, sessionId)
   } catch (error: any) {
     console.error('文件上传错误详情:', error)
     const errorMessage = error.message || '文件上传失败'
@@ -211,6 +237,13 @@ const hideUpload = () => {
   showUploadForm.value = false
 }
 
+// 切换上传表单显示状态
+const toggleUpload = () => {
+  console.log('FileUpload: toggleUpload 方法被调用，当前状态:', showUploadForm.value)
+  showUploadForm.value = !showUploadForm.value
+  console.log('FileUpload: 切换后状态:', showUploadForm.value)
+}
+
 // 获取上传的文件列表
 const getUploadedFiles = () => {
   return [...uploadedFiles.value]
@@ -221,7 +254,8 @@ defineExpose({
   clearAllFiles,
   getUploadedFiles,
   showUpload,
-  hideUpload
+  hideUpload,
+  toggleUpload
 })
 </script>
 
@@ -238,10 +272,10 @@ defineExpose({
         <el-button 
           type="primary" 
           :icon="Paperclip" 
-          @click="showUpload"
+          @click="toggleUpload"
           class="file-button"
           title="上传文件"
-          style="background-color: rgb(102, 8, 116); border-color: rgb(102, 8, 116); height: 40px; width: 40px;"
+          style="background-color: rgb(102, 8, 116); border-color: rgb(102, 8, 116); height: 32px; width: 32px;"
           circle
         />
       </template>

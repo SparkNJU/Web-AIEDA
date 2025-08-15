@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ElInput, ElButton, ElMessageBox, ElMessage, ElIcon, ElSelect, ElOption } from 'element-plus'
-import { ArrowUp, View, Download, Delete, MoreFilled } from '@element-plus/icons-vue'
+import { ArrowUp, View, Download, Delete, MoreFilled, Setting, FolderOpened } from '@element-plus/icons-vue'
 import { ref, watch } from 'vue'
 import FileUpload from '../../components/FileUpload.vue'
+import LLMConfig from '../../components/LLMConfig.vue'
 import type { FileVO } from '../../api/file'
 import { formatFileSize, downloadFile as apiDownloadFile, getFileList, deleteFile as apiDeleteFile } from '../../api/file'
 
@@ -27,6 +28,8 @@ const emit = defineEmits<{
   'update:input-message': [value: string]
   'send-message': [message: string, agentType: AgentType, inputType: InputType, files?: FileVO[]]
   'open-file-preview': [file: FileVO] // 新增：文件预览事件
+  'toggle-file-preview': [] // 新增：切换文件预览窗口事件
+  'create-session': [] // 新增：创建会话事件
 }>()
 
 // 响应式数据
@@ -34,6 +37,16 @@ const uploadedFiles = ref<FileVO[]>([])
 const fileUploadRef = ref<InstanceType<typeof FileUpload>>()
 const selectedAgentType = ref<AgentType>('orchestrator') // 默认使用orchestrator
 const hasConfigSent = ref<Map<number, boolean>>(new Map()) // 跟踪每个会话是否已发送配置
+
+// LLM配置相关
+const showLLMConfig = ref(false)
+
+// 定义LLM配置数据类型
+interface LLMConfigData {
+  apiKey: string
+  baseUrl: string
+  model: string
+}
 
 // Agent类型选项
 const agentOptions = [
@@ -138,6 +151,12 @@ const handleFilePreview = (file: FileVO) => {
   emit('open-file-preview', file)
 }
 
+// 处理创建会话
+const handleCreateSession = () => {
+  console.log('ChatInput: 处理创建会话事件')
+  emit('create-session')
+}
+
 // 删除单个文件
 const removeFile = async (file: FileVO) => {
   try {
@@ -184,6 +203,45 @@ const downloadFile = async (file: FileVO) => {
   } catch (error) {
     console.error('文件下载失败:', error)
     ElMessage.error('文件下载失败')
+  }
+}
+
+// LLM配置相关方法
+const openLLMConfig = () => {
+  showLLMConfig.value = true
+}
+
+// 文件预览相关方法
+const openFilePreview = () => {
+  // 发出事件给父组件，让父组件处理文件预览逻辑
+  emit('toggle-file-preview')
+}
+
+const handleConfigSaved = async (configData: LLMConfigData | null) => {
+  try {
+    console.log('保存LLM配置:', configData)
+    
+    if (configData) {
+      // 自定义模式：将配置数据序列化为JSON字符串传递
+      const configMessage = JSON.stringify({
+        apiKey: configData.apiKey,
+        baseUrl: configData.baseUrl,
+        model: configData.model
+      })
+      emit('send-message', configMessage, selectedAgentType.value, 'config' as InputType, undefined)
+    } else {
+      // 默认模式：发送空配置
+      emit('send-message', "", selectedAgentType.value, 'config' as InputType, undefined)
+    }
+    
+    // 标记配置已发送
+    hasConfigSent.value.set(props.sid, true)
+    
+    ElMessage.success('LLM配置已保存')
+    
+  } catch (error) {
+    console.error('配置保存失败:', error)
+    ElMessage.error('配置保存失败')
   }
 }
 </script>
@@ -266,13 +324,31 @@ const downloadFile = async (file: FileVO) => {
         @update:model-value="(val: string) => emit('update:input-message', val)"
         class="message-input"
       />
-      
+
+      <!-- 发送按钮 -->
+      <el-button 
+        type="primary" 
+        @click="sendMessage" 
+        :loading="isLoading || isStreaming"
+        :disabled="inputDisabled || !inputMessage.trim()"
+        :icon="ArrowUp"
+        class="send-button"
+        style="background-color: rgb(102, 8, 116); border-color: rgb(102, 8, 116);"
+        title="发送消息"
+        round
+      >
+        {{ isStreaming ? '生成中...' : '发送' }}
+      </el-button>
+    </div>
+
+    <!-- 控制按钮行 -->
+    <div class="control-row">
       <!-- Agent类型选择器 -->
       <el-select
         v-model="selectedAgentType"
         placeholder="选择代理"
         class="agent-selector"
-        size="large"
+        size="small"
         :disabled="inputDisabled"
       >
         <el-option
@@ -299,23 +375,31 @@ const downloadFile = async (file: FileVO) => {
         @files-change="handleFilesChange"
         @upload-success="handleUploadSuccess"
         @upload-error="handleUploadError"
+        @create-session="handleCreateSession"
         @file-preview="handleFilePreview"
       />
 
-      <!-- 发送按钮 -->
+      <!-- 文件预览按钮 -->
       <el-button 
-        type="primary" 
-        @click="sendMessage" 
-        :loading="isLoading || isStreaming"
-        :disabled="inputDisabled || !inputMessage.trim()"
-        :icon="ArrowUp"
-        class="send-button"
-        style="background-color: rgb(102, 8, 116); border-color: rgb(102, 8, 116);"
-        title="发送消息"
-        round
-      >
-        {{ isStreaming ? '生成中...' : '发送' }}
-      </el-button>
+        type="default"
+        @click="openFilePreview"
+        :disabled="inputDisabled"
+        :icon="FolderOpened"
+        class="control-button"
+        title="文件预览"
+        circle
+      />
+
+      <!-- LLM配置按钮 -->
+      <el-button 
+        type="default"
+        @click="openLLMConfig"
+        :disabled="inputDisabled"
+        :icon="Setting"
+        class="control-button"
+        title="LLM配置"
+        circle
+      />
     </div>
 
     <!-- 底部提示 -->
@@ -330,6 +414,14 @@ const downloadFile = async (file: FileVO) => {
         </span>
       </div>
     </div>
+
+    <!-- LLM配置对话框 -->
+    <LLMConfig
+      v-model:visible="showLLMConfig"
+      :uid="props.uid"
+      :sid="props.sid"
+      @config-saved="handleConfigSaved"
+    />
   </div>
 </template>
 
@@ -340,7 +432,7 @@ const downloadFile = async (file: FileVO) => {
   background: #f8f9fa;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
   box-sizing: border-box;
 }
@@ -485,6 +577,15 @@ const downloadFile = async (file: FileVO) => {
   display: flex;
   align-items: flex-end;
   gap: 8px;
+  margin-bottom: 8px;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  padding-top: 4px;
 }
 
 .message-input {
@@ -493,19 +594,27 @@ const downloadFile = async (file: FileVO) => {
 
 .agent-selector {
   flex-shrink: 0;
-  width: 120px;
-}
-
-.file-button {
-  flex-shrink: 0;
-  height: 40px;
-  width: 40px;
+  width: 140px;
 }
 
 .send-button {
   flex-shrink: 0;
   height: 40px;
   min-width: 80px;
+}
+
+.control-button {
+  flex-shrink: 0;
+  height: 32px;
+  width: 32px;
+  border-color: #dcdfe6;
+  color: #606266;
+  transition: all 0.2s ease;
+}
+
+.control-button:hover {
+  border-color: rgb(102, 8, 116);
+  color: rgb(102, 8, 116);
 }
 
 .input-footer {
@@ -547,7 +656,7 @@ const downloadFile = async (file: FileVO) => {
 :deep(.agent-selector .el-select__wrapper) {
   border-radius: 8px;
   border-color: #dcdfe6;
-  height: 40px;
+  height: 32px;
 }
 
 :deep(.agent-selector .el-select__wrapper.is-focused) {
@@ -555,7 +664,7 @@ const downloadFile = async (file: FileVO) => {
 }
 
 :deep(.agent-selector .el-select__placeholder) {
-  font-size: 14px;
+  font-size: 12px;
   color: #a8abb2;
 }
 
@@ -570,6 +679,19 @@ const downloadFile = async (file: FileVO) => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
+  .input-row {
+    gap: 6px;
+  }
+  
+  .control-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  
+  .agent-selector {
+    width: 120px;
+  }
+  
   .files-carousel {
     flex-direction: column;
   }
