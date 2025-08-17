@@ -13,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/files")
 @Tag(name = "文件管理", description = "文件上传、下载、预览相关接口")
@@ -217,7 +219,7 @@ public class FileController {
         }
     }
 
-    @Operation(summary = "获取文件结构", description = "从大模型服务获取当前会话的文件结构")
+    @Operation(summary = "获取文件结构（平铺格式，已废弃）", description = "从大模型服务获取当前会话的文件结构（平铺格式，建议使用 /structure-tree）")
     @GetMapping("/structure")
     public Response<FileListResponseVO> getFileStructure(
             @Parameter(description = "用户ID", required = true)
@@ -239,6 +241,31 @@ public class FileController {
             
         } catch (Exception e) {
             return Response.buildFailure("获取文件结构失败: " + e.getMessage(), "500");
+        }
+    }
+
+    @Operation(summary = "获取层次化文件结构", description = "从大模型服务获取当前会话的层次化文件结构（直接返回LLM结构）")
+    @GetMapping("/structure-tree")
+    public Response<Map<String, Object>> getHierarchicalFileStructure(
+            @Parameter(description = "用户ID", required = true)
+            @RequestParam("uid") String uid,
+            @Parameter(description = "会话ID", required = true)
+            @RequestParam("sid") String sid) {
+        
+        try {
+            if (uid == null || uid.trim().isEmpty()) {
+                return Response.buildFailure("用户ID不能为空", "400");
+            }
+            
+            if (sid == null || sid.trim().isEmpty()) {
+                return Response.buildFailure("会话ID不能为空", "400");
+            }
+            
+            Map<String, Object> fileStructure = fileService.getHierarchicalFileStructure(uid, sid);
+            return Response.buildSuccess(fileStructure);
+            
+        } catch (Exception e) {
+            return Response.buildFailure("获取层次化文件结构失败: " + e.getMessage(), "500");
         }
     }
 

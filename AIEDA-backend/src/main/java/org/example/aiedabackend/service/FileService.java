@@ -6,6 +6,8 @@ import org.example.aiedabackend.vo.FileVO;
 import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Map;
+
 public interface FileService {
     
     /**
@@ -52,6 +54,11 @@ public interface FileService {
      * 从大模型服务获取文件结构列表
      */
     FileListResponseVO getFileStructureFromLLM(String uid, String sid);
+    
+    /**
+     * 从大模型服务获取层次化文件结构（直接返回LLM的结构）
+     */
+    Map<String, Object> getHierarchicalFileStructure(String uid, String sid);
     
     /**
      * 通过本地路径访问文件内容

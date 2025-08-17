@@ -21,6 +21,7 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.stream.Collectors;
 
@@ -229,11 +230,25 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public FileVO getFileInfo(String fid) {
+        // 首先尝试从数据库查找（主要用于uploads文件夹的文件）
         File file = fileRepository.findByFileId(fid);
-        if (file == null) {
-            throw new RuntimeException("文件不存在");
+        if (file != null) {
+            return file.toVO();
         }
-        return file.toVO();
+        
+        // 如果数据库中没有，说明可能是LLM生成的文件，直接创建一个基本的FileVO
+        // 这些文件的详细信息将通过其他接口（如预览、下载）从LLM服务获取
+        FileVO fileVO = new FileVO();
+        fileVO.setFileId(fid);
+        fileVO.setOriginalName("未知文件"); // 可以通过其他方式获取文件名
+        fileVO.setSavedName("未知文件");
+        fileVO.setFilePath("");
+        fileVO.setFileSize(0L);
+        fileVO.setFileType("application/octet-stream");
+        fileVO.setUploadTime(LocalDateTime.now()); // 使用当前时间作为默认值
+        fileVO.setDownloadUrl(LLM_SERVICE_BASE_URL + "/download/" + fid);
+        
+        return fileVO;
     }
 
     @Override
@@ -314,8 +329,7 @@ public class FileServiceImpl implements FileService {
             
             // 解析文件结构
             Map<String, Object> fileStructure = (Map<String, Object>) responseBody.get("file_structure");
-            if (fileStructure == null || !fileStructure.containsKey("uploads")) {
-                // 如果没有uploads目录，返回空列表
+            if (fileStructure == null) {
                 FileListResponseVO emptyResponse = new FileListResponseVO();
                 emptyResponse.setFiles(new ArrayList<>());
                 emptyResponse.setTotalCount(0);
@@ -401,6 +415,44 @@ public class FileServiceImpl implements FileService {
             System.out.println("本地文件访问失败: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException("本地文件访问失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public Map<String, Object> getHierarchicalFileStructure(String uid, String sid) {
+        try {
+            System.out.println("FileServiceImpl.getHierarchicalFileStructure 被调用，uid: " + uid + ", sid: " + sid);
+            
+            // 调用大模型的文件列表接口
+            String listUrl = LLM_SERVICE_BASE_URL + "/list/" + uid + "/" + sid;
+            System.out.println("请求大模型文件列表URL: " + listUrl);
+            
+            ResponseEntity<Map> response = restTemplate.getForEntity(listUrl, Map.class);
+            System.out.println("大模型服务响应状态: " + response.getStatusCode());
+            System.out.println("大模型服务响应内容: " + response.getBody());
+            
+            if (response.getStatusCode() != HttpStatus.OK) {
+                throw new RuntimeException("大模型服务响应错误，状态码: " + response.getStatusCode());
+            }
+            
+            Map<String, Object> responseBody = response.getBody();
+            if (responseBody == null || !"success".equals(responseBody.get("status"))) {
+                throw new RuntimeException("大模型服务返回失败响应");
+            }
+            
+            // 直接返回大模型的 file_structure，让前端自己解析
+            Map<String, Object> fileStructure = (Map<String, Object>) responseBody.get("file_structure");
+            if (fileStructure == null) {
+                fileStructure = new HashMap<>();
+            }
+            
+            System.out.println("直接返回大模型文件结构，节点数量: " + fileStructure.size());
+            return fileStructure;
+            
+        } catch (Exception e) {
+            System.out.println("获取层次化文件结构失败: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("获取层次化文件结构失败: " + e.getMessage());
         }
     }
 }
