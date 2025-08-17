@@ -135,6 +135,11 @@ export const getFileStructure = (params: FileListRequestVO) => {
   return axios.get(`${FILE_MODULE}/structure`, { params })
 }
 
+// 获取层次化文件结构（直接返回LLM的原始结构）
+export const getHierarchicalFileStructure = (params: FileListRequestVO) => {
+  return axios.get(`${FILE_MODULE}/structure-tree`, { params })
+}
+
 // 通过本地路径访问文件
 export const getLocalFile = (uid: number, sid: number, filename: string) => {
   return axios.get(`${FILE_MODULE}/local/${uid}/${sid}/${filename}`, {
@@ -209,53 +214,40 @@ export const getFileIcon = (fileType: string): string => {
   return '📁'
 }
 
-// 判断文件是否可预览
-export const canPreviewFile = (fileType: string): boolean => {
+// 判断文件是否可预览（黑名单模式）
+export const canPreviewFile = (fileType: string, fileName?: string): boolean => {
   const type = fileType.toLowerCase()
+  const name = (fileName || '').toLowerCase()
   
-  // 可预览的文件类型（与上传支持的文件类型保持一致）
-  const previewableTypes = [
-    // 图片类型
-    'image/',
-    
-    // 文本类型 - MIME 类型
-    'text/', 'application/json', 'application/xml', 'text/csv',
-    'text/plain', 'text/html', 'text/css', 'text/javascript',
-    'application/javascript', 'text/markdown', 'text/x-markdown',
-    
-    // PDF文档
-    'application/pdf',
-    
-    // Office文档（部分可预览）
-    'application/msword', // .doc
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-    'application/vnd.ms-excel', // .xls
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-    'application/vnd.ms-powerpoint', // .ppt
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
-    
-    // 其他格式
-    'application/rtf'
+  // 不可预览的文件类型黑名单（目前只屏蔽 zip 文件）
+  const blacklistedTypes = [
+    // 压缩文件
+    'application/zip',
+    'application/x-zip-compressed',
+    'application/x-zip',
+    'multipart/x-zip'
   ]
   
-  // 可预览的文件扩展名
-  const previewableExtensions = [
-    '.txt', '.md', '.json', '.xml', '.csv', '.html', '.css', '.js',
-    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.rtf'
+  // 不可预览的文件扩展名黑名单
+  const blacklistedExtensions = [
+    '.zip'
   ]
   
-  // 检查 MIME 类型或扩展名
-  const isMimeTypeSupported = previewableTypes.some(previewType => 
-    type.startsWith(previewType) || type.includes(previewType)
+  // 检查 MIME 类型黑名单
+  const isMimeTypeBlacklisted = blacklistedTypes.some(blacklistedType => 
+    type === blacklistedType || type.includes(blacklistedType)
   )
   
-  const isExtensionSupported = previewableExtensions.some(ext => 
-    type === ext || type.endsWith(ext)
+  // 检查文件扩展名黑名单
+  const isExtensionBlacklisted = blacklistedExtensions.some(ext => 
+    name.endsWith(ext) || type === ext || type.endsWith(ext)
   )
   
-  // 图片类型特殊处理：支持常见图片扩展名
-  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg']
-  const isImageExtension = imageExtensions.some(ext => type === ext || type.endsWith(ext))
+  // 如果在黑名单中，则不可预览
+  if (isMimeTypeBlacklisted || isExtensionBlacklisted) {
+    return false
+  }
   
-  return isMimeTypeSupported || isExtensionSupported || isImageExtension
+  // 不在黑名单中的文件都允许预览
+  return true
 }

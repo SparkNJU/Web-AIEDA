@@ -366,12 +366,6 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
         :sid="props.sid"
         :max-files="5"
         :max-size="50"
-        :accept-types="[
-          'image/', 'text/', 
-          'pdf', 'txt', 'md', 'json', 'xml', 'csv',
-          'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-          '.doc', '.docx', '.pdf', '.txt', '.md', '.json', '.xml', '.csv'
-        ]"
         @files-change="handleFilesChange"
         @upload-success="handleUploadSuccess"
         @upload-error="handleUploadError"

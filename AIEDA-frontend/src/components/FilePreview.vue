@@ -47,43 +47,23 @@
         </div>
         
         <div v-if="!directoryCollapsed" class="directory-content">
-          <div class="file-list" v-loading="isLoading">
+          <div class="file-tree" v-loading="isLoading">
             <!-- 空状态 -->
-            <div v-if="fileList.length === 0 && !isLoading" class="empty-state">
+            <div v-if="Object.keys(fileStructure).length === 0 && !isLoading" class="empty-state">
               <el-icon class="empty-icon"><Document /></el-icon>
               <p class="empty-text">当前会话暂无文件</p>
               <p class="empty-hint">上传文件后将在此处显示</p>
             </div>
 
-            <!-- 文件项 -->
-            <div 
-              v-for="file in fileList" 
-              :key="file.fileId || file.originalName"
-              class="file-item"
-              :class="{ 'active': selectedFile?.originalName === file.originalName }"
-              @click="selectFileForPreview(file)"
-            >
-              <div class="file-icon">
-                <el-icon size="20" color="#606266">
-                  <Document />
-                </el-icon>
-              </div>
-              <div class="file-info">
-                <div class="file-name">{{ file.originalName }}</div>
-                <div class="file-meta">
-                  <span class="file-type">{{ getFileTypeDisplay(file.fileType) }}</span>
-                </div>
-              </div>
-              <div class="file-actions">
-                <el-button 
-                  :icon="Download" 
-                  @click.stop="downloadFile(file)"
-                  size="small"
-                  circle
-                  title="下载"
-                />
-              </div>
-            </div>
+            <!-- 层次化文件树 -->
+            <FileTreeNodeRecursive 
+              v-for="(nodeValue, nodeName) in fileStructure" 
+              :key="`root-${nodeName}`"
+              :node-name="String(nodeName)"
+              :node-value="nodeValue"
+              :selected-file-id="selectedFileId"
+              @file-selected="handleFileSelected"
+            />
           </div>
         </div>
       </div>
@@ -202,7 +182,8 @@ import {
   ArrowLeft, 
   ArrowRight 
 } from '@element-plus/icons-vue'
-import { getFileStructure, downloadFile as apiDownloadFile, previewFile, type FileVO } from '../api/file'
+import { getHierarchicalFileStructure, downloadFile as apiDownloadFile, previewFile, canPreviewFile, type FileVO } from '../api/file'
+import FileTreeNodeRecursive from './FileTreeNodeRecursive.vue'
 
 // 组件属性
 const props = defineProps<{
@@ -219,8 +200,9 @@ const emit = defineEmits<{
 }>()
 
 // 响应式数据
-const fileList = ref<FileVO[]>([])
+const fileStructure = ref<Record<string, any>>({}) // 直接存储LLM返回的原始结构
 const selectedFile = ref<FileVO | null>(null)
+const selectedFileId = ref<string>('')
 const previewContent = ref('')
 const previewUrl = ref('')
 const previewType = ref<'text' | 'image' | 'pdf' | 'unsupported'>('unsupported')
@@ -248,35 +230,31 @@ const getFileTypeDisplay = (fileType: string): string => {
 // 加载文件列表
 const loadFileList = async () => {
   if (!props.uid || !props.sid) {
-    fileList.value = []
+    fileStructure.value = {}
     return
   }
 
   try {
     isLoading.value = true
-    console.log('加载文件结构:', { uid: props.uid, sid: props.sid })
+    console.log('加载层次化文件结构:', { uid: props.uid, sid: props.sid })
     
-    const response = await getFileStructure({ uid: props.uid, sid: props.sid })
+    const response = await getHierarchicalFileStructure({ uid: props.uid, sid: props.sid })
     
     if (response.data && response.data.code === '200') {
-      fileList.value = response.data.data.files || []
-      console.log('文件结构加载成功:', fileList.value)
+      fileStructure.value = response.data.data || {}
+      console.log('层次化文件结构加载成功:', fileStructure.value)
       
       // 如果有指定的文件ID，自动选择该文件
-      if (props.selectedFileId && fileList.value.length > 0) {
-        const targetFile = fileList.value.find(f => f.fileId === props.selectedFileId || f.originalName === props.selectedFileId)
-        if (targetFile) {
-          await selectFileForPreview(targetFile)
-        }
+      if (props.selectedFileId) {
+        selectedFileId.value = props.selectedFileId
       }
     } else {
-      console.log('文件结构为空或加载失败')
-      fileList.value = []
+      console.log('层次化文件结构为空或加载失败')
+      fileStructure.value = {}
     }
   } catch (error) {
-    console.error('加载文件结构失败:', error)
-    ElMessage.error('加载文件列表失败')
-    fileList.value = []
+    console.error('加载层次化文件结构失败:', error)
+    fileStructure.value = {}
   } finally {
     isLoading.value = false
   }
@@ -286,6 +264,26 @@ const loadFileList = async () => {
 const selectFileForPreview = async (file: FileVO) => {
   selectedFile.value = file
   await loadFilePreview(file)
+}
+
+// 处理文件选择（来自文件树组件的事件）
+const handleFileSelected = async (fileInfo: { fileId: string, fileName: string, nodeName: string, nodeValue: any }) => {
+  // 创建FileVO对象用于预览
+  const fileVO: FileVO = {
+    fileId: fileInfo.fileId,
+    originalName: fileInfo.fileName,
+    savedName: fileInfo.fileName,
+    filePath: '', // 路径信息在nodeValue中
+    fileSize: 0,
+    fileType: '',
+    uploadTime: '',
+    downloadUrl: fileInfo.nodeValue?.url || '',
+    userId: props.uid.toString(),
+    sessionId: props.sid.toString()
+  }
+  
+  selectedFileId.value = fileInfo.fileId
+  await selectFileForPreview(fileVO)
 }
 
 // 加载文件预览
@@ -298,6 +296,13 @@ const loadFilePreview = async (file: FileVO) => {
 
     console.log('开始预览文件:', file.originalName, '文件类型:', file.fileType)
 
+    // 首先检查文件是否在黑名单中
+    if (!canPreviewFile(file.fileType || '', file.originalName)) {
+      console.log('文件在预览黑名单中，不支持预览:', file.originalName)
+      previewType.value = 'unsupported'
+      return
+    }
+
     // 判断文件类型并设置预览方式
     const fileType = file.fileType?.toLowerCase() || ''
     const fileName = file.originalName?.toLowerCase() || ''
@@ -308,12 +313,11 @@ const loadFilePreview = async (file: FileVO) => {
     } else if (isPdfFile(fileType, fileName)) {
       previewType.value = 'pdf'
       await loadPdfPreview(file)
-    } else if (isTextFile(fileType, fileName)) {
+    } else {
+      // 默认按照文本文件处理，除非是黑名单中的文件
       previewType.value = 'text'
       await loadTextPreview(file)
-    } else {
-      previewType.value = 'unsupported'
-      console.log('不支持预览的文件类型:', fileType)
+      console.log('按文本格式预览文件:', fileName, '文件类型:', fileType)
     }
 
   } catch (error: any) {
@@ -334,16 +338,6 @@ const isImageFile = (fileType: string, fileName: string): boolean => {
 // 判断是否为PDF文件
 const isPdfFile = (fileType: string, fileName: string): boolean => {
   return fileType.includes('pdf') || fileName.endsWith('.pdf')
-}
-
-// 判断是否为文本文件
-const isTextFile = (fileType: string, fileName: string): boolean => {
-  return fileType.startsWith('text/') ||
-         fileType.includes('json') ||
-         fileType.includes('xml') ||
-         fileType.includes('csv') ||
-         fileType.includes('javascript') ||
-         ['.txt', '.md', '.json', '.xml', '.csv', '.html', '.css', '.js'].some(ext => fileName.endsWith(ext))
 }
 
 // 加载图片预览
@@ -541,7 +535,7 @@ watch(() => props.visible, async (visible) => {
   overflow: hidden;
 }
 
-.file-list {
+.file-tree {
   height: 100%;
   overflow-y: auto;
   padding: 8px;
@@ -808,27 +802,27 @@ watch(() => props.visible, async (visible) => {
 }
 
 /* 滚动条样式 */
-.file-list::-webkit-scrollbar,
+.file-tree::-webkit-scrollbar,
 .preview-content::-webkit-scrollbar,
 .text-content::-webkit-scrollbar {
   width: 6px;
 }
 
-.file-list::-webkit-scrollbar-track,
+.file-tree::-webkit-scrollbar-track,
 .preview-content::-webkit-scrollbar-track,
 .text-content::-webkit-scrollbar-track {
   background: #f1f1f1;
   border-radius: 3px;
 }
 
-.file-list::-webkit-scrollbar-thumb,
+.file-tree::-webkit-scrollbar-thumb,
 .preview-content::-webkit-scrollbar-thumb,
 .text-content::-webkit-scrollbar-thumb {
   background: #c1c1c1;
   border-radius: 3px;
 }
 
-.file-list::-webkit-scrollbar-thumb:hover,
+.file-tree::-webkit-scrollbar-thumb:hover,
 .preview-content::-webkit-scrollbar-thumb:hover,
 .text-content::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;

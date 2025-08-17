@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElUpload, ElButton, ElIcon, ElMessage, ElPopover } from 'element-plus'
 import { Upload, Close, Paperclip } from '@element-plus/icons-vue'
-import { uploadFile, type FileVO } from '../api/file'
+import { uploadFile, type FileVO, canPreviewFile } from '../api/file'
 
 // 组件属性
 const props = defineProps<{
@@ -10,7 +10,6 @@ const props = defineProps<{
   sid: number
   maxFiles?: number
   maxSize?: number // MB
-  acceptTypes?: string[]
 }>()
 
 // 组件事件
@@ -46,13 +45,6 @@ watch(showUploadForm, (newValue) => {
 })
 
 // 计算属性
-const acceptTypesString = computed(() => {
-  if (!props.acceptTypes || props.acceptTypes.length === 0) {
-    return undefined
-  }
-  return props.acceptTypes.join(',')
-})
-
 const maxFileSize = computed(() => (props.maxSize || 10) * 1024 * 1024) // 转换为字节
 
 // 文件上传前的检查
@@ -69,55 +61,11 @@ const beforeUpload = (file: File) => {
     return false
   }
 
-  // 检查文件类型
-  if (props.acceptTypes && props.acceptTypes.length > 0) {
-    const fileName = file.name.toLowerCase()
-    const fileType = file.type.toLowerCase()
-    
-    const isValidType = props.acceptTypes.some(type => {
-      const lowerType = type.toLowerCase()
-      
-      // 处理扩展名（以.开头）
-      if (lowerType.startsWith('.')) {
-        return fileName.endsWith(lowerType)
-      }
-      
-      // 处理MIME类型（如 image/、text/）
-      if (lowerType.includes('/')) {
-        return fileType.startsWith(lowerType)
-      }
-      
-      // 处理特定文档类型的MIME映射
-      const documentMimeTypes: Record<string, string[]> = {
-        'pdf': ['application/pdf'],
-        'txt': ['text/plain', 'text/txt'],
-        'md': ['text/markdown', 'text/x-markdown'],
-        'doc': ['application/msword'],
-        'docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-        'xls': ['application/vnd.ms-excel'],
-        'xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-        'ppt': ['application/vnd.ms-powerpoint'],
-        'pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
-        'json': ['application/json', 'text/json'],
-        'xml': ['application/xml', 'text/xml'],
-        'csv': ['text/csv', 'application/csv'],
-        'rtf': ['application/rtf', 'text/rtf']
-      }
-      
-      // 根据扩展名检查
-      if (documentMimeTypes[lowerType]) {
-        return documentMimeTypes[lowerType].includes(fileType) || fileName.endsWith(`.${lowerType}`)
-      }
-      
-      // 其他情况：检查文件扩展名
-      return fileName.endsWith(`.${lowerType}`)
-    })
-    
-    if (!isValidType) {
-      const fileExtension = fileName.substring(fileName.lastIndexOf('.'))
-      ElMessage.error(`不支持的文件类型: ${fileExtension || file.type}，支持的格式: ${props.acceptTypes.join(', ')}`)
-      return false
-    }
+  // 检查文件类型（黑名单模式）
+  if (!canPreviewFile(file.type, file.name)) {
+    const fileExtension = file.name.substring(file.name.lastIndexOf('.'))
+    ElMessage.error(`不支持上传此文件类型: ${fileExtension || file.type}`)
+    return false
   }
 
   return true
@@ -298,7 +246,6 @@ defineExpose({
             <el-upload
               :http-request="customUpload"
               :show-file-list="false"
-              :accept="acceptTypesString"
               :disabled="isUploading"
               drag
               multiple
@@ -310,9 +257,7 @@ defineExpose({
                 <div class="upload-hint">
                   <span v-if="props.maxFiles">最多上传 {{ props.maxFiles }} 个文件，</span>
                   <span>单个文件不超过 {{ props.maxSize || 10 }}MB</span>
-                  <span v-if="props.acceptTypes && props.acceptTypes.length > 0">
-                    ，支持格式: {{ props.acceptTypes.join(', ') }}
-                  </span>
+                  <span>，不支持 zip 等压缩文件</span>
                 </div>
               </div>
             </el-upload>
