@@ -130,7 +130,7 @@ const chatLayoutWidth = computed(() => {
   // 如果显示文件预览，根据侧边栏状态调整宽度
   // 侧边栏收起时：180px -> 48px，节省了132px
   // 侧边栏展开时：保持55%
-  return asideCollapsed.value ? '55%' : '45%'  // 侧边栏收起时可以给聊天区域更多空间
+  return asideCollapsed.value ? '50%' : '50%'  // 侧边栏收起时可以给聊天区域更多空间
 })
 
 // 检查当前会话是否有文件（简化实现）

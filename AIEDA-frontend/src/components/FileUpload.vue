@@ -211,16 +211,17 @@ defineExpose({
   <div class="file-upload-component">
     <!-- 使用 Popover 的上传按钮 -->
     <el-popover
-      :visible="showUploadForm"
+      v-model:visible="showUploadForm"
       placement="top"
       :width="400"
       popper-class="file-upload-popover"
+      trigger="click"
+      :hide-after="0"
     >
       <template #reference>
         <el-button 
           type="primary" 
           :icon="Paperclip" 
-          @click="toggleUpload"
           class="file-button"
           title="上传文件"
           style="background-color: rgb(102, 8, 116); border-color: rgb(102, 8, 116); height: 32px; width: 32px;"

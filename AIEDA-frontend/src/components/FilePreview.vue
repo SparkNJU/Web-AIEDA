@@ -413,8 +413,8 @@ watch(() => props.visible, async (visible) => {
 .file-preview-overlay {
   position: fixed;
   top: 0;
-  left: 55%;
-  right: 0;
+  left: 50%;
+  right: 0%;
   bottom: 0;
   z-index: 1000;
   background-color: white;
@@ -661,6 +661,8 @@ watch(() => props.visible, async (visible) => {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0; /* 允许内容收缩 */
+  overflow: hidden; /* 防止内容溢出 */
 }
 
 .explorer-header {
@@ -702,6 +704,7 @@ watch(() => props.visible, async (visible) => {
   overflow: auto;
   padding: 16px;
   background-color: white;
+  min-width: 0; /* 允许内容收缩 */
 }
 
 /* 图片预览样式 */
@@ -741,6 +744,8 @@ watch(() => props.visible, async (visible) => {
 /* 文本预览样式 */
 .text-preview {
   height: 100%;
+  min-width: 0; /* 允许内容收缩 */
+  overflow: hidden; /* 防止内容溢出 */
 }
 
 .text-content {
@@ -756,7 +761,9 @@ watch(() => props.visible, async (visible) => {
   overflow: auto;
   white-space: pre-wrap;
   word-wrap: break-word;
+  word-break: break-word; /* 强制长单词换行 */
   margin: 0;
+  box-sizing: border-box; /* 确保padding不会导致溢出 */
 }
 
 .no-preview {
