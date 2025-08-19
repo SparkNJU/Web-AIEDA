@@ -377,7 +377,7 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
       <el-button 
         type="default"
         @click="openFilePreview"
-        :disabled="inputDisabled"
+        :disabled="false"
         :icon="FolderOpened"
         class="control-button"
         title="文件预览"

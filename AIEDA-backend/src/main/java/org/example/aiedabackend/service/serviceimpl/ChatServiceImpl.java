@@ -75,7 +75,7 @@ public class ChatServiceImpl implements ChatService {
     // SSE连接超时管理
     private final ConcurrentHashMap<SseEmitter, AtomicLong> sseLastActivityMap = new ConcurrentHashMap<>();
     private final ScheduledExecutorService timeoutScheduler = Executors.newScheduledThreadPool(2);
-    private static final long INACTIVITY_TIMEOUT = 20000L; // 20秒无活动则超时
+    private static final long INACTIVITY_TIMEOUT = 120000L; // 120秒无活动则超时
 
     /**
      * 获取当前时间戳字符串
@@ -122,7 +122,7 @@ public class ChatServiceImpl implements ChatService {
         long lastActivityTime = lastActivity.get();
         
         if (currentTime - lastActivityTime > INACTIVITY_TIMEOUT) {
-            log.warn("[{}] ⏰ SSE连接因20秒无活动而超时，准备关闭", getCurrentTimestamp());
+            log.warn("[{}] ⏰ SSE连接因120秒无活动而超时，准备关闭", getCurrentTimestamp());
             closeSseConnection(emitter, "无活动超时");
         }
     }

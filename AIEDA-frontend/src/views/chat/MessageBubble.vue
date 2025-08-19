@@ -1,10 +1,10 @@
 <!-- MessageBubble.vue -->
 <script setup lang="ts">
-import { ElCard, ElCollapse, ElCollapseItem } from 'element-plus'
+import { ElCard } from 'element-plus'
 import MarkdownIt from 'markdown-it'
 import texmath from 'markdown-it-texmath'
 import katex from 'katex'
-import { watch, ref, computed } from 'vue'
+import { watch, computed } from 'vue'
 import 'katex/dist/katex.min.css'
 
 // 接收单个消息参数
@@ -42,7 +42,6 @@ const md = new MarkdownIt({
     }
   }
 })
-const activeCollapseItems = ref<string[]>([])
 
 // 添加watch来调试props变化，同时优化性能
 watch(() => props.content, (newContent, oldContent) => {
@@ -70,17 +69,23 @@ watch(() => props.isStreaming, (newStreaming, oldStreaming) => {
   }
 })
 
-// 处理内容，将工具调用和引用标签转换为折叠组件
+// 处理内容，将工具调用和引用标签转换为内联标签
 const processContent = (text: string) => {
-  if (!text) return { mainContent: '', toolCalls: [], references: [] }
+  if (!text) return { processedText: '', toolCalls: [], references: [] }
+  
+  console.log('开始处理内容:', {
+    originalLength: text.length,
+    timestamp: new Date().toLocaleTimeString(),
+    preview: text.substring(0, 200) + (text.length > 200 ? '...' : '')
+  })
   
   let processed = text
-  const toolCalls: Array<{id: string, name: string, content: string}> = []
-  const references: Array<{id: string, tagName: string, link: string, index: string, text: string, refId: number}> = []
+  const toolCalls: Array<{id: string, name: string, content: string, position: number}> = []
+  const references: Array<{id: string, tagName: string, link: string, index: string, text: string, refId: number, position: number}> = []
   let refCounter = 1 // 按顺序增长的ref_id计数器
   
   // 处理工具调用标签（如 ```tool\n调用`mcp_client`\noperation: call_tool, arguments: {'query': '王力宏'}, tool_name: bing_search\n```）
-  processed = processed.replace(/```tool\n([\s\S]*?)\n```/g, (_, toolContent) => {
+  processed = processed.replace(/```tool\n([\s\S]*?)\n```/g, (_, toolContent, offset) => {
     const toolId = `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     // 从工具内容中提取工具名称
     const toolNameMatch = toolContent.match(/调用`([^`]+)`/)
@@ -89,40 +94,94 @@ const processContent = (text: string) => {
     toolCalls.push({
       id: toolId,
       name: toolName,
-      content: toolContent.trim()
+      content: toolContent.trim(),
+      position: offset
     })
-    return `[🔧 工具调用: ${toolName}]`
+    
+    // 返回带有容器的HTML结构
+    return `<span class="tag-container" data-tool-id="${toolId}">
+      <span class="inline-tag tool-tag" data-tool-id="${toolId}" title="点击查看详细信息">🔧 ${toolName}</span>
+      <div class="tag-expanded-content" data-for="${toolId}" style="display: none;">
+        <pre class="tool-content">${toolContent.trim()}</pre>
+      </div>
+    </span>`
   })
   
   // 处理普通工具调用标签 <tool_name>content</tool_name>（保留原有功能）
-  processed = processed.replace(/<(\w+)>([\s\S]*?)<\/\1>/g, (_, toolName, toolContent) => {
+  // 修改正则表达式以支持带点号的标签名，如 <default_api.command_executor>
+  processed = processed.replace(/<([a-zA-Z_][a-zA-Z0-9_.]*?)>([\s\S]*?)<\/\1>/g, (match, toolName, toolContent, offset) => {
     // 跳过引用类型的标签（有link和index属性的）
     if (toolContent.includes('link=') && toolContent.includes('index=')) {
-      return `<${toolName}>${toolContent}</${toolName}>`
+      return match
     }
+    
+    console.log('检测到工具调用标签:', {
+      toolName,
+      contentLength: toolContent.length,
+      offset
+    })
     
     const toolId = `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     toolCalls.push({
       id: toolId,
       name: toolName,
-      content: toolContent.trim()
+      content: toolContent.trim(),
+      position: offset
     })
-    return `[🔧 工具调用: ${toolName}]`
+    
+    // 返回带有容器的HTML结构
+    return `<span class="tag-container" data-tool-id="${toolId}">
+      <span class="inline-tag tool-tag" data-tool-id="${toolId}" title="点击查看详细信息">🔧 ${toolName}</span>
+      <div class="tag-expanded-content" data-for="${toolId}" style="display: none;">
+        <pre class="tool-content">${toolContent.trim()}</pre>
+      </div>
+    </span>`
   })
   
   // 处理引用标签 <tag_name link="..." index="...">text</tag_name>
-  // 支持任意标签名，不仅限于mcreference
-  processed = processed.replace(/<(\w+)\s+link="([^"]*?)"\s+index="([^"]*?)"[^>]*>([\s\S]*?)<\/\1>/g, (_, tagName, link, index, text) => {
+  // 支持任意标签名，不仅限于mcreference，也支持带点号的标签名
+  processed = processed.replace(/<([a-zA-Z_][a-zA-Z0-9_.]*?)\s+link="([^"]*?)"\s+index="([^"]*?)"[^>]*>([\s\S]*?)<\/\1>/g, (_, tagName, link, index, text, offset) => {
+    console.log('检测到引用标签:', {
+      tagName,
+      link,
+      index,
+      textLength: text.length,
+      offset
+    })
+    
     const elementId = `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const currentRefId = refCounter++
     references.push({
       id: elementId,
       tagName: tagName, // 保存原始标签名
       link: decodeURIComponent(link),
       index,
       text,
-      refId: refCounter++ // 按顺序增长的ref_id
+      refId: currentRefId,
+      position: offset
     })
-    return `[📚 ${tagName}_${index}]`
+    
+    // 返回带有容器的HTML结构
+    return `<span class="tag-container" data-ref-id="${elementId}">
+      <span class="inline-tag reference-tag" data-ref-id="${elementId}" title="点击查看详细信息">📚 ${tagName}_${index}</span>
+      <div class="tag-expanded-content" data-for="${elementId}" style="display: none;">
+        <div class="reference-info">
+          <div class="reference-id"><strong>Ref ID:</strong> ref_${currentRefId}</div>
+          <div class="reference-tag"><strong>标签类型:</strong> ${tagName}</div>
+          <div class="reference-index"><strong>索引:</strong> ${index}</div>
+        </div>
+        <div class="reference-link">
+          <strong>链接:</strong> 
+          <a href="${decodeURIComponent(link)}" target="_blank" rel="noopener noreferrer" class="external-link">
+            ${decodeURIComponent(link)}
+          </a>
+        </div>
+        <div class="reference-text">
+          <strong>引用文本:</strong> 
+          <div class="reference-text-content">${text}</div>
+        </div>
+      </div>
+    </span>`
   })
   
   // 处理旧的ref标签
@@ -130,8 +189,16 @@ const processContent = (text: string) => {
   // 移除answer标签但保留内容
   processed = processed.replace(/<answer>([\s\S]*?)<\/answer>/g, '$1')
   
+  console.log('内容处理完成:', {
+    originalLength: text.length,
+    processedLength: processed.length,
+    toolCallsCount: toolCalls.length,
+    referencesCount: references.length,
+    timestamp: new Date().toLocaleTimeString()
+  })
+  
   return {
-    mainContent: processed,
+    processedText: processed,
     toolCalls,
     references
   }
@@ -141,6 +208,56 @@ const processContent = (text: string) => {
 const processedContent = computed(() => {
   return processContent(props.content)
 })
+
+// 添加点击处理函数
+const handleTagClick = (event: Event) => {
+  const target = event.target as HTMLElement
+  
+  console.log('标签点击事件:', {
+    target: target.className,
+    isInlineTag: target.classList.contains('inline-tag'),
+    isStreaming: props.isStreaming,
+    timestamp: new Date().toLocaleTimeString()
+  })
+  
+  if (target.classList.contains('inline-tag')) {
+    const toolId = target.getAttribute('data-tool-id')
+    const refId = target.getAttribute('data-ref-id')
+    
+    console.log('标签属性:', {
+      toolId,
+      refId,
+      parentElement: target.parentElement?.className
+    })
+    
+    // 找到对应的展开内容
+    let expandedContent: HTMLElement | null = null
+    
+    if (toolId) {
+      expandedContent = target.parentElement?.querySelector(`[data-for="${toolId}"]`) as HTMLElement
+    } else if (refId) {
+      expandedContent = target.parentElement?.querySelector(`[data-for="${refId}"]`) as HTMLElement
+    }
+    
+    console.log('展开内容查找结果:', {
+      expandedContent: expandedContent ? '找到' : '未找到',
+      currentDisplay: expandedContent?.style.display,
+      expandedContentClass: expandedContent?.className
+    })
+    
+    if (expandedContent) {
+      // 切换显示状态
+      const isCurrentlyHidden = expandedContent.style.display === 'none' || expandedContent.style.display === ''
+      expandedContent.style.display = isCurrentlyHidden ? 'block' : 'none'
+      
+      console.log('切换展开状态:', {
+        wasHidden: isCurrentlyHidden,
+        newDisplay: expandedContent.style.display,
+        timestamp: new Date().toLocaleTimeString()
+      })
+    }
+  }
+}
 </script>
 
 <template>
@@ -160,74 +277,25 @@ const processedContent = computed(() => {
     <!-- AI消息 -->
     <template v-else>
       <!-- 主要内容 -->
-      <div class="main-content">
-        <!-- 对于正在流式输出的内容，先显示原始文本，流式完成后再渲染markdown -->
+      <div 
+        class="main-content message-content" 
+        :data-streaming="props.isStreaming"
+        @click="handleTagClick"
+      >
+        <!-- 对于正在流式输出的内容，也需要渲染HTML标签 -->
         <template v-if="props.isStreaming">
-          <!-- 流式输出时使用简单文本渲染，避免频繁的markdown解析影响性能 -->
-          <div class="streaming-content">{{ processedContent.mainContent }}</div>
+          <!-- 流式输出时也渲染HTML，但不进行markdown处理以提升性能 -->
+          <div class="streaming-content" v-html="processedContent.processedText"></div>
         </template>
         <template v-else>
           <!-- 流式完成后渲染markdown格式 -->
-          <div class="md-content" v-html="md.render(processedContent.mainContent)" />
+          <div class="md-content" v-html="md.render(processedContent.processedText)" />
         </template>
         
         <!-- 流式输出指示器 -->
         <div v-if="props.isStreaming && !props.content.includes('🤔') && !props.content.includes('⏳') && !props.content.includes('❌')" class="streaming-indicator">
           <span class="cursor">|</span>
         </div>
-      </div>
-
-      <!-- 工具调用折叠区域 -->
-      <div v-if="processedContent.toolCalls.length > 0" class="tool-calls-section">
-        <el-collapse v-model="activeCollapseItems" accordion>
-          <el-collapse-item 
-            v-for="tool in processedContent.toolCalls" 
-            :key="tool.id"
-            :title="`🔧 工具调用: ${tool.name}`"
-            :name="tool.id"
-            class="tool-collapse-item"
-          >
-            <div class="tool-content-wrapper">
-              <div class="tool-content" v-html="md.render(tool.content)"></div>
-            </div>
-          </el-collapse-item>
-        </el-collapse>
-      </div>
-
-      <!-- 引用链接折叠区域 -->
-      <div v-if="processedContent.references.length > 0" class="references-section">
-        <el-collapse v-model="activeCollapseItems" accordion>
-          <el-collapse-item 
-            v-for="ref in processedContent.references" 
-            :key="ref.id"
-            :title="`📚 ${ref.tagName} [ref_${ref.refId}]: ${ref.text}`"
-            :name="ref.id"
-            class="reference-collapse-item"
-          >
-            <div class="reference-content-wrapper">
-              <div class="reference-info">
-                <div class="reference-id">
-                  <strong>Ref ID:</strong> ref_{{ ref.refId }}
-                </div>
-                <div class="reference-tag">
-                  <strong>标签类型:</strong> {{ ref.tagName }}
-                </div>
-                <div class="reference-index">
-                  <strong>索引:</strong> {{ ref.index }}
-                </div>
-              </div>
-              <div class="reference-link">
-                <strong>链接:</strong> 
-                <a :href="ref.link" target="_blank" rel="noopener noreferrer" class="external-link">
-                  {{ ref.link }}
-                </a>
-              </div>
-              <div class="reference-text">
-                <strong>引用文本:</strong> {{ ref.text }}
-              </div>
-            </div>
-          </el-collapse-item>
-        </el-collapse>
       </div>
     </template>
   </el-card>
@@ -294,7 +362,7 @@ const processedContent = computed(() => {
 }
 
 .main-content {
-  margin-bottom: 8px;
+  line-height: 1.6;
 }
 
 .streaming-content {
@@ -476,115 +544,158 @@ const processedContent = computed(() => {
   }
 }
 
-/* 工具调用和引用区域样式 */
-.tool-calls-section,
-.references-section {
-  margin-top: 12px;
-  border-top: 1px solid #f0f0f0;
-  padding-top: 8px;
-}
-
-.tool-calls-section:first-child,
-.references-section:first-child {
-  border-top: none;
-  padding-top: 0;
-  margin-top: 0;
-}
-
-/* 折叠组件样式 */
-:deep(.el-collapse) {
-  border: none;
-  background: transparent;
-}
-
-:deep(.el-collapse-item__header) {
-  background-color: #f8f9fa;
-  border: 1px solid #e9ecef;
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 0.9em;
-  color: #495057;
+/* 标签容器样式 - 支持内联展开 */
+:deep(.tag-container) {
+  position: relative;
+  display: inline-block;
+  margin: 0 1px; /* 调整这个值可以控制标签间距：0px = 最紧凑，2px = 稍宽松 */
+  vertical-align: baseline;
   height: auto;
-  line-height: 1.4;
-  margin-bottom: 4px;
-  transition: all 0.3s ease;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  line-height: normal;
 }
 
-:deep(.el-collapse-item__header:hover) {
-  background-color: #e9ecef;
-  border-color: #dee2e6;
+/* 内联标签样式 - 更紧凑的设计 */
+:deep(.inline-tag) {
+  display: inline-block;
+  padding: 0 3px; /* 调整这个值可以控制标签大小：0 2px = 最小，2px 6px = 较大 */
+  margin: 0;
+  border-radius: 6px; /* 调整这个值可以控制圆角：4px = 较小圆角，8px = 较大圆角 */
+  font-size: 0.7em; /* 调整这个值可以控制字体大小：0.6em = 更小，0.8em = 更大 */
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  vertical-align: baseline;
+  line-height: 1.1; /* 调整这个值可以控制行高：1.0 = 最紧凑，1.3 = 较松 */
+  height: auto;
+  min-height: 0;
+  max-height: none;
 }
 
-:deep(.el-collapse-item__header.is-active) {
-  background-color: rgba(102, 8, 116, 0.08);
-  border-color: rgba(102, 8, 116, 0.2);
-  color: rgb(102, 8, 116);
+:deep(.tool-tag) {
+  background-color: rgba(40, 167, 69, 0.1);
+  color: #28a745;
+  border: 1px solid rgba(40, 167, 69, 0.3);
 }
 
-:deep(.el-collapse-item__wrap) {
-  border: none;
-  background: transparent;
+:deep(.tool-tag:hover) {
+  background-color: rgba(40, 167, 69, 0.2);
+  border-color: rgba(40, 167, 69, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
 }
 
-:deep(.el-collapse-item__content) {
-  padding: 8px 0 0 0;
-  border: none;
-  background: transparent;
+:deep(.reference-tag) {
+  background-color: rgba(0, 123, 255, 0.1);
+  color: #007bff;
+  border: 1px solid rgba(0, 123, 255, 0.3);
 }
 
-/* 工具内容样式 */
-.tool-content-wrapper {
-  background-color: #f8f9fa;
-  border: 1px solid #e9ecef;
-  border-radius: 6px;
-  max-height: 300px;
-  overflow: auto;
-  resize: vertical;
-  min-height: 100px;
+:deep(.reference-tag:hover) {
+  background-color: rgba(0, 123, 255, 0.2);
+  border-color: rgba(0, 123, 255, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
 }
 
-.tool-content {
-  padding: 12px;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
-  font-size: 0.85em;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
-
-.tool-content :deep(pre) {
-  background-color: #ffffff;
-  border: 1px solid #dee2e6;
+/* 内联展开内容区域样式 */
+.inline-expandable-content {
+  display: inline-block;
+  width: 100%;
   margin: 4px 0;
 }
 
-.tool-content :deep(code) {
-  background-color: #ffffff;
-  border: 1px solid #dee2e6;
+/* 展开内容区域样式 */
+.expandable-content {
+  margin-top: 12px;
 }
 
-/* 引用内容样式 */
-.reference-content-wrapper {
-  background-color: #f8f9fa;
-  border: 1px solid #e9ecef;
-  border-radius: 6px;
+.expanded-item {
+  margin-bottom: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  animation: slideDown 0.3s ease-out;
+}
+
+/* 展开内容容器 - 修复流式输出时的显示问题 */
+:deep(.tag-expanded-content) {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 400px;
+  min-width: 400px;
+  max-width: 500px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  animation: slideDown 0.2s ease-out;
+  margin-top: 2px;
   padding: 12px;
-  max-height: 250px;
-  overflow: auto;
-  resize: vertical;
-  min-height: 100px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* 工具调用展开内容的左边框 */
+:deep([data-tool-id] .tag-expanded-content) {
+  border-left: 4px solid #28a745;
+}
+
+/* 引用展开内容的左边框 */
+:deep([data-ref-id] .tag-expanded-content) {
+  border-left: 4px solid #007bff;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tool-content {
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #495057;
+  background: #f8f9fa;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+  margin: 0;
+  overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .reference-info {
-  background-color: #e9ecef;
-  padding: 8px;
-  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #495057;
+  width: 100%;
   margin-bottom: 12px;
-  font-size: 0.85em;
 }
 
 .reference-info > div {
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+  word-wrap: break-word;
+  word-break: break-word;
+  width: 100%;
 }
 
 .reference-info > div:last-child {
@@ -592,68 +703,120 @@ const processedContent = computed(() => {
 }
 
 .reference-id {
-  color: #495057;
   font-weight: 600;
+  color: #007bff;
 }
 
 .reference-tag {
   color: #007bff;
+  font-weight: 500;
 }
 
 .reference-index {
   color: #28a745;
+  font-weight: 500;
 }
 
 .reference-link {
-  margin-bottom: 8px;
+  color: #6c757d;
+  font-size: 12px;
   word-break: break-all;
+  margin-bottom: 8px;
+  width: 100%;
 }
 
 .reference-text {
-  color: #6c757d;
-  font-style: italic;
+  background: #f8f9fa;
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #007bff;
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-word;
+  line-height: 1.5;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.reference-text-content {
+  font-size: 13px;
+  color: #495057;
+  width: 100%;
+  word-wrap: break-word;
+  word-break: break-word;
 }
 
 .external-link {
   color: rgb(102, 8, 116);
   text-decoration: none;
-  font-size: 0.9em;
 }
 
 .external-link:hover {
   text-decoration: underline;
 }
 
-/* 工具和引用的特殊样式 */
-.tool-collapse-item :deep(.el-collapse-item__header) {
-  border-left: 3px solid #28a745;
-}
-
-.reference-collapse-item :deep(.el-collapse-item__header) {
-  border-left: 3px solid #007bff;
-}
-
 /* 滚动条样式 */
-.tool-content-wrapper::-webkit-scrollbar,
-.reference-content-wrapper::-webkit-scrollbar {
+.expanded-content::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-.tool-content-wrapper::-webkit-scrollbar-track,
-.reference-content-wrapper::-webkit-scrollbar-track {
+.expanded-content::-webkit-scrollbar-track {
   background: #f1f1f1;
   border-radius: 3px;
 }
 
-.tool-content-wrapper::-webkit-scrollbar-thumb,
-.reference-content-wrapper::-webkit-scrollbar-thumb {
+.expanded-content::-webkit-scrollbar-thumb {
   background: #c1c1c1;
   border-radius: 3px;
 }
 
-.tool-content-wrapper::-webkit-scrollbar-thumb:hover,
-.reference-content-wrapper::-webkit-scrollbar-thumb:hover {
+.expanded-content::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* 确保 pre 标签内的内容也能正确换行 */
+:deep(.tool-content pre),
+:deep(pre.tool-content) {
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+}
+
+.tool-content::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.tool-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.tool-content::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.tool-content::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.tool-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.tool-content::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.tool-content::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
 </style>
