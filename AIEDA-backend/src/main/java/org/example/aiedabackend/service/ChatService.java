@@ -8,6 +8,11 @@ import java.util.List;
 
 public interface ChatService {
     /**
+     * 为指定会话创建独立的SSE连接
+     */
+    SseEmitter createSessionSSE(Integer uid, Integer sid);
+
+    /**
      * 获取用户所有会话列表
      */
     List<SessionVO> getSessions(Integer uid);

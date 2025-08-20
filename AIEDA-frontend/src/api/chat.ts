@@ -41,10 +41,6 @@ export interface CreateSessionRequestVO {
 }
 
 // 聊天相关 API
-export const sendMessage = (data: ChatRequestVO) => {
-  // 方法1: 使用300秒超时的axios实例
-  return longTimeoutAxios.post(`${CHAT_MODULE}/messages`, data)
-}
 
 // 流式发送消息 - 返回Response对象用于流式读取
 export const sendMessageStream = async (data: ChatRequestVO): Promise<Response> => {
@@ -58,8 +54,8 @@ export const sendMessageStream = async (data: ChatRequestVO): Promise<Response> 
     headers['token'] = token
   }
   
-  // 使用统一的基础URL配置
-  const response = await fetch(`${BASE_URL}${CHAT_MODULE}/messages/stream`, {
+  // 使用带会话ID的URL路径
+  const response = await fetch(`${BASE_URL}${CHAT_MODULE}/messages/${data.sid}/stream`, {
     method: 'POST',
     headers: headers,
     body: JSON.stringify(data)
@@ -72,20 +68,6 @@ export const sendMessageStream = async (data: ChatRequestVO): Promise<Response> 
   return response
 }
 
-// EventSource方式的SSE连接 - 如果后端支持GET方式
-export const createSSEConnection = (sessionId: number, userId: number, message: string): EventSource => {
-  const token = getToken()
-  const params = new URLSearchParams({
-    uid: userId.toString(),
-    sid: sessionId.toString(),
-    content: message,
-    ...(token && { token })
-  })
-  
-  // 使用GET方式建立SSE连接
-  const url = `${BASE_URL}${CHAT_MODULE}/messages/sse?${params.toString()}`
-  return new EventSource(url)
-}
 
 export const createSession = (uid: number, title: string = '新会话') => {
   return axios.post(`${CHAT_MODULE}/sessions`, { uid, title })

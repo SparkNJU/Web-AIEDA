@@ -64,8 +64,6 @@ const asideCollapsed = ref(false) // 侧边栏收起状态
 const suggestionQuestions = [
 "AI 如何提升 EDA 全链路仿真性能？有实测吗？",
 "系统级仿真各环节如何衔接？传递函数作用？",
-"信号输入接口如何适配 FDTD 等仿真需求？",
-"实测数据如何提升 DFT 仿真精度？"
 ];
 
 // 计算属性

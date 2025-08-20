@@ -47,10 +47,15 @@ public class ChatController {
     }
 
     @Operation(summary = "发送消息并流式获取AI回复", description = "向指定会话发送用户消息（支持文件引用和Agent类型选择），并通过SSE流式获取AI回复")
-    @PostMapping(value = "/messages/stream", produces = "text/event-stream")
+    @PostMapping(value = "/messages/{sid}/stream", produces = "text/event-stream")
     public SseEmitter sendMessageSSE(
+            @Parameter(description = "会话ID", required = true)
+            @PathVariable Integer sid,
             @Parameter(description = "聊天消息请求对象", required = true)
             @RequestBody ChatRequestVO request) {
+        // 确保请求中的sid与路径参数一致
+        request.setSid(sid);
+        
         // 获取agentType，如果没有指定则默认为orchestrator
         String agentType = request.getAgentType() != null ? request.getAgentType() : "orchestrator";
         
@@ -78,6 +83,7 @@ public class ChatController {
             return chatService.sendMessageSSE(request.getUid(), request.getSid(), request.getContent(), agentType, inputType);
         }
     }
+
 
     @Operation(summary = "更新会话标题", description = "更新指定会话的标题")
     @PutMapping("/sessions/{sid}")
