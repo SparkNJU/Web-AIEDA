@@ -1,8 +1,5 @@
-import { axios, createServiceWithTimeout, getToken, BASE_URL } from '../utils/request'
+import { axios, getToken, BASE_URL } from '../utils/request'
 import { CHAT_MODULE } from './_prefix';
-
-// 创建长超时的axios实例（用于sendMessage）
-const longTimeoutAxios = createServiceWithTimeout(300000) // 300秒
 
 // 定义接口数据类型
 export interface SessionVO {
