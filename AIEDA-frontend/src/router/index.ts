@@ -1,11 +1,13 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import Layout from '../components/Layout/Layout.vue'
-import Home from '../views/home/Home.vue'
-import Login from '../views/user/Login.vue'
-import Register from '../views/user/Register.vue'
-import Profile from '../views/user/Profile.vue'
-import ChatPage from '../views/chat/ChatPage.vue'
 import { ElMessage } from 'element-plus'
+
+// 懒加载组件，只有访问时才加载
+const Layout = () => import('../components/Layout/Layout.vue')
+const Home = () => import('../views/home/Home.vue')
+const Login = () => import('../views/user/Login.vue')
+const Register = () => import('../views/user/Register.vue')
+const Profile = () => import('../views/user/Profile.vue')
+const ChatPage = () => import('../views/chat/ChatPage.vue')
 
 const router = createRouter({
   history: createWebHashHistory(),

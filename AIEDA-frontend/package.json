@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:5173": "vite --port 5173",
     "build": "vue-tsc -b && vite build",
+    "build:analyze": "vue-tsc -b && vite build --mode analyze",
     "preview": "vite preview",
     "preview:80": "vite preview --port 80 --host 0.0.0.0",
     "serve": "npm run build && npm run preview:80",
@@ -27,6 +28,7 @@
     "@types/node": "^24.2.1",
     "@vitejs/plugin-vue": "^6.0.0",
     "@vue/tsconfig": "^0.7.0",
+    "terser": "^5.43.1",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vue-tsc": "^2.2.12"
