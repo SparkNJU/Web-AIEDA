@@ -25,6 +25,8 @@ const emit = defineEmits<{
 const uploadedFiles = ref<FileVO[]>([])
 const isUploading = ref(false)
 const showUploadForm = ref(false)
+const uploadMode = ref<'file' | 'folder'>('file') // 新增：上传模式选择
+const folderInputRef = ref<HTMLInputElement>()
 
 // 调试：组件挂载时的日志
 onMounted(() => {
@@ -45,19 +47,13 @@ watch(showUploadForm, (newValue) => {
 })
 
 // 计算属性
-const maxFileSize = computed(() => (props.maxSize || 10) * 1024 * 1024) // 转换为字节
+const maxFileSize = computed(() => (props.maxSize || 100) * 1024 * 1024) // 转换为字节，默认100MB
 
 // 文件上传前的检查
 const beforeUpload = (file: File) => {
-  // 检查文件数量
-  if (props.maxFiles && uploadedFiles.value.length >= props.maxFiles) {
-    ElMessage.error(`最多只能上传 ${props.maxFiles} 个文件`)
-    return false
-  }
-
   // 检查文件大小
   if (file.size > maxFileSize.value) {
-    ElMessage.error(`文件大小不能超过 ${props.maxSize || 10}MB`)
+    ElMessage.error(`文件大小不能超过 ${props.maxSize || 100}MB`)
     return false
   }
 
@@ -179,6 +175,181 @@ const showUpload = () => {
   console.log('FileUpload: 设置后 showUploadForm 值:', showUploadForm.value)
 }
 
+// 触发文件夹上传
+const triggerFolderUpload = () => {
+  if (folderInputRef.value) {
+    folderInputRef.value.click()
+  }
+}
+
+// 处理文件夹上传
+const handleFolderUpload = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const files = input.files
+  
+  if (!files || files.length === 0) {
+    return
+  }
+
+  isUploading.value = true
+
+  try {
+    let sessionId = props.sid
+    
+    // 如果没有会话ID（sid为0），先创建会话
+    if (sessionId === 0) {
+      console.log('没有会话ID，自动创建会话并继续上传')
+      emit('create-session')
+      sessionId = await waitForSession()
+      console.log('会话创建完成，ID:', sessionId)
+    }
+    
+    // 按文件夹结构上传文件
+    await uploadFolderFiles(Array.from(files), sessionId)
+  } catch (error: any) {
+    console.error('文件夹上传错误:', error)
+    const errorMessage = error.message || '文件夹上传失败'
+    emit('upload-error', errorMessage)
+    ElMessage.error(errorMessage)
+  } finally {
+    isUploading.value = false
+    // 清空文件输入
+    input.value = ''
+  }
+}
+
+// 处理文件夹拖拽上传
+const handleFolderDrop = async (event: DragEvent) => {
+  event.preventDefault()
+  
+  const items = event.dataTransfer?.items
+  if (!items) return
+
+  const files: File[] = []
+  
+  // 遍历拖拽的项目，提取文件
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.kind === 'file') {
+      const entry = item.webkitGetAsEntry()
+      if (entry) {
+        await traverseFileTree(entry, '', files)
+      }
+    }
+  }
+
+  if (files.length === 0) {
+    ElMessage.warning('未检测到有效的文件')
+    return
+  }
+
+  isUploading.value = true
+
+  try {
+    let sessionId = props.sid
+    
+    if (sessionId === 0) {
+      emit('create-session')
+      sessionId = await waitForSession()
+    }
+    
+    await uploadFolderFiles(files, sessionId)
+  } catch (error: any) {
+    console.error('文件夹拖拽上传错误:', error)
+    const errorMessage = error.message || '文件夹上传失败'
+    emit('upload-error', errorMessage)
+    ElMessage.error(errorMessage)
+  } finally {
+    isUploading.value = false
+  }
+}
+
+// 遍历文件树（用于拖拽上传）
+const traverseFileTree = async (item: any, path: string, files: File[]): Promise<void> => {
+  return new Promise((resolve) => {
+    if (item.isFile) {
+      item.file((file: File) => {
+        // 设置文件的相对路径
+        const relativePath = path ? `${path}/${file.name}` : file.name
+        Object.defineProperty(file, 'webkitRelativePath', {
+          value: relativePath,
+          writable: false
+        })
+        files.push(file)
+        resolve()
+      })
+    } else if (item.isDirectory) {
+      const dirReader = item.createReader()
+      dirReader.readEntries(async (entries: any[]) => {
+        const promises = entries.map(entry => 
+          traverseFileTree(entry, path ? `${path}/${item.name}` : item.name, files)
+        )
+        await Promise.all(promises)
+        resolve()
+      })
+    }
+  })
+}
+
+// 上传文件夹中的文件
+const uploadFolderFiles = async (files: File[], sessionId: number) => {
+  console.log('开始上传文件夹，文件数量:', files.length)
+  
+  for (const file of files) {
+    // 检查单个文件
+    if (!beforeUpload(file)) {
+      continue
+    }
+    
+    try {
+      // 获取文件的相对路径
+      const relativePath = file.webkitRelativePath || file.name
+      console.log('上传文件:', relativePath)
+      
+      // 修改文件上传，包含文件夹结构信息
+      await performFolderFileUpload(file, sessionId, relativePath)
+    } catch (error) {
+      console.error(`上传文件 ${file.name} 失败:`, error)
+      ElMessage.error(`上传文件 ${file.name} 失败`)
+    }
+  }
+  
+  ElMessage.success('文件夹上传完成')
+  hideUpload()
+}
+
+// 上传单个文件夹文件
+const performFolderFileUpload = async (file: File, sessionId: number, relativePath: string) => {
+  console.log('开始上传文件夹文件:', file.name, '路径:', relativePath)
+  
+  const response = await uploadFile({
+    uid: props.uid,
+    sid: sessionId,
+    file: file,
+    metadata: JSON.stringify({
+      originalName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      folderPath: relativePath // 添加文件夹路径信息
+    })
+  })
+
+  console.log('文件夹文件上传响应:', response)
+  
+  if (response.data && response.data.data) {
+    const fileVO: FileVO = response.data.data
+    uploadedFiles.value.push(fileVO)
+    
+    emit('files-change', [...uploadedFiles.value])
+    emit('upload-success', fileVO)
+    
+    console.log(`文件 "${relativePath}" 上传成功`)
+  } else {
+    console.error('响应格式错误，缺少 data 字段:', response)
+    throw new Error('响应格式错误')
+  }
+}
+
 // 隐藏上传表单
 const hideUpload = () => {
   console.log('FileUpload: hideUpload 方法被调用')
@@ -243,8 +414,32 @@ defineExpose({
             />
           </div>
           
+          <!-- 上传模式选择器 -->
+          <div class="upload-mode-selector">
+            <el-button 
+              :type="uploadMode === 'file' ? 'primary' : 'default'"
+              @click="uploadMode = 'file'"
+              size="small"
+              style="background-color: rgb(102, 8, 116); border-color: rgb(102, 8, 116);"
+              :class="{ 'active-mode': uploadMode === 'file' }"
+            >
+              上传文件
+            </el-button>
+            <el-button 
+              :type="uploadMode === 'folder' ? 'primary' : 'default'"
+              @click="uploadMode = 'folder'"
+              size="small"
+              style="background-color: rgb(102, 8, 116); border-color: rgb(102, 8, 116);"
+              :class="{ 'active-mode': uploadMode === 'folder' }"
+            >
+              上传文件夹
+            </el-button>
+          </div>
+          
           <div class="upload-area">
+            <!-- 文件上传区域 -->
             <el-upload
+              v-if="uploadMode === 'file'"
               :http-request="customUpload"
               :show-file-list="false"
               :disabled="isUploading"
@@ -256,12 +451,40 @@ defineExpose({
               <div class="upload-text">
                 <div class="upload-primary">点击或拖拽文件到此区域上传</div>
                 <div class="upload-hint">
-                  <span v-if="props.maxFiles">最多上传 {{ props.maxFiles }} 个文件，</span>
-                  <span>单个文件不超过 {{ props.maxSize || 10 }}MB</span>
+                  <span>单个文件不超过 {{ props.maxSize || 100 }}MB</span>
                   <span>，不支持 zip 等压缩文件</span>
                 </div>
               </div>
             </el-upload>
+            
+            <!-- 文件夹上传区域 -->
+            <div v-else-if="uploadMode === 'folder'" class="folder-upload-area">
+              <input
+                ref="folderInputRef"
+                type="file"
+                webkitdirectory
+                directory
+                multiple
+                @change="handleFolderUpload"
+                style="display: none;"
+              />
+              <div 
+                class="folder-upload-dragger"
+                @click="triggerFolderUpload"
+                @drop="handleFolderDrop"
+                @dragover.prevent
+                @dragenter.prevent
+              >
+                <el-icon class="upload-icon"><upload /></el-icon>
+                <div class="upload-text">
+                  <div class="upload-primary">点击选择文件夹上传</div>
+                  <div class="upload-hint">
+                    <span>将保持文件夹结构</span>
+                    <span>，单个文件不超过 {{ props.maxSize || 100 }}MB</span>
+                  </div>
+                </div>
+              </div>
+            </div>
             
             <div class="upload-status" v-if="isUploading">
               <span>正在上传...</span>
@@ -324,6 +547,68 @@ defineExpose({
   text-align: center;
 }
 
+/* 上传模式选择器样式 */
+.upload-mode-selector {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 16px;
+  padding: 8px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.upload-mode-selector .el-button {
+  flex: 1;
+  max-width: 120px;
+}
+
+.upload-mode-selector .el-button.active-mode {
+  background-color: rgb(102, 8, 116) !important;
+  border-color: rgb(102, 8, 116) !important;
+  color: white !important;
+}
+
+.upload-mode-selector .el-button:not(.active-mode) {
+  background-color: white !important;
+  border-color: #dcdfe6 !important;
+  color: #606266 !important;
+}
+
+.upload-mode-selector .el-button:not(.active-mode):hover {
+  border-color: rgb(102, 8, 116) !important;
+  color: rgb(102, 8, 116) !important;
+}
+
+/* 文件夹上传区域样式 */
+.folder-upload-area {
+  width: 100%;
+}
+
+.folder-upload-dragger {
+  width: 100%;
+  height: 120px;
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  background-color: #fafafa;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.folder-upload-dragger:hover {
+  border-color: rgb(102, 8, 116);
+  background-color: rgba(102, 8, 116, 0.02);
+}
+
+.folder-upload-dragger.is-dragover {
+  border-color: rgb(102, 8, 116);
+  background-color: rgba(102, 8, 116, 0.05);
+}
+
 .upload-dragger {
   width: 100%;
 }
@@ -335,6 +620,11 @@ defineExpose({
   border-radius: 8px;
   background-color: #fafafa;
   transition: all 0.3s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 :deep(.el-upload-dragger:hover) {

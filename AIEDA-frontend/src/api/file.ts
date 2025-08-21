@@ -22,6 +22,7 @@ export interface FileUploadRequestVO {
   sid: number
   file: File
   metadata?: string
+  folderPath?: string // 新增：文件夹路径信息
 }
 
 export interface FileListRequestVO {
@@ -53,8 +54,35 @@ export const uploadFile = (data: FileUploadRequestVO) => {
   if (data.metadata) {
     formData.append('metadata', data.metadata)
   }
+  if (data.folderPath) {
+    formData.append('folderPath', data.folderPath)
+  }
 
   return axios.post(`${FILE_MODULE}/upload`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
+// 批量上传文件夹中的文件
+export const uploadFolderFiles = (files: FileUploadRequestVO[]) => {
+  const formData = new FormData()
+  
+  files.forEach((fileData, index) => {
+    formData.append(`files[${index}]`, fileData.file)
+    formData.append(`folderPaths[${index}]`, fileData.folderPath || fileData.file.name)
+    formData.append(`metadata[${index}]`, fileData.metadata || JSON.stringify({
+      originalName: fileData.file.name,
+      fileSize: fileData.file.size,
+      fileType: fileData.file.type
+    }))
+  })
+  
+  formData.append('uid', files[0].uid.toString())
+  formData.append('sid', files[0].sid.toString())
+
+  return axios.post(`${FILE_MODULE}/upload-batch`, formData, {
     headers: {
       'Content-Type': 'multipart/form-data'
     }

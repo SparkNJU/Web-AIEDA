@@ -106,6 +106,7 @@ const sendMessage = async () => {
     // 检查是否需要先发送配置（隐式发送，用户不可见）
     if (!hasConfigSent.value.get(sessionId)) {
       console.log('首次发送问题，先隐式发送配置')
+    
       // 隐式发送配置信息，不显示给用户
       emit('send-message', '', selectedAgentType.value, 'config' as InputType, undefined)
       
@@ -364,8 +365,7 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
         ref="fileUploadRef"
         :uid="props.uid"
         :sid="props.sid"
-        :max-files="5"
-        :max-size="50"
+        :max-size="100"
         @files-change="handleFilesChange"
         @upload-success="handleUploadSuccess"
         @upload-error="handleUploadError"
