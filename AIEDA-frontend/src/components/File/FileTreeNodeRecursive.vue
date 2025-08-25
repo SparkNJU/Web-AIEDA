@@ -61,7 +61,7 @@ export default {
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElIcon, ElButton } from 'element-plus'
 import { Folder, FolderOpened, Document, Download } from '@element-plus/icons-vue'
-import { downloadFile as apiDownloadFile } from '../api/file'
+import { downloadFile as apiDownloadFile } from '../../api/file'
 
 // 组件属性
 const props = defineProps<{

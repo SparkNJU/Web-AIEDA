@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ElInput, ElButton, ElMessageBox, ElMessage, ElIcon, ElSelect, ElOption } from 'element-plus'
-import { ArrowUp, View, Download, Delete, MoreFilled, Setting, FolderOpened } from '@element-plus/icons-vue'
-import { ref, watch } from 'vue'
-import FileUpload from '../../components/FileUpload.vue'
-import LLMConfig from '../../components/LLMConfig.vue'
+import { View, Download, Delete, MoreFilled, Setting, FolderOpened, Promotion, CaretTop, VideoPause } from '@element-plus/icons-vue'
+import { ref, watch, computed } from 'vue'
+import FileUpload from '../../components/File/FileUpload.vue'
+import LLMConfig from '../../components/LLM/LLMConfig.vue'
+import LLMIntervention from '../../components/LLM/LLMIntervention.vue'
+import type { InterventionState } from '../../components/LLM/LLMIntervention.vue'
 import type { FileVO } from '../../api/file'
 import { formatFileSize, downloadFile as apiDownloadFile, getFileList, deleteFile as apiDeleteFile } from '../../api/file'
 
@@ -12,6 +14,7 @@ export type AgentType = 'orchestrator' | 'dynamic'
 
 // 输入类型定义
 export type InputType = 'question' | 'config' | 'intervention' | 'delete'
+
 
 // 接收参数
 const props = defineProps<{
@@ -30,6 +33,8 @@ const emit = defineEmits<{
   'open-file-preview': [file: FileVO] // 新增：文件预览事件
   'toggle-file-preview': [] // 新增：切换文件预览窗口事件
   'create-session': [] // 新增：创建会话事件
+  'pause-streaming': [] // 新增：暂停流式输出事件
+  'send-instruction': [instruction: string] // 新增：发送指令事件
 }>()
 
 // 响应式数据
@@ -37,6 +42,10 @@ const uploadedFiles = ref<FileVO[]>([])
 const fileUploadRef = ref<InstanceType<typeof FileUpload>>()
 const selectedAgentType = ref<AgentType>('orchestrator') // 默认使用orchestrator
 const hasConfigSent = ref<Map<number, boolean>>(new Map()) // 跟踪每个会话是否已发送配置
+
+// Intervention相关状态
+const interventionState = ref<InterventionState>('normal')
+const llmInterventionRef = ref<InstanceType<typeof LLMIntervention>>()
 
 // LLM配置相关
 const showLLMConfig = ref(false)
@@ -62,8 +71,94 @@ watch(() => props.sid, async (newSid, oldSid) => {
     if (!hasConfigSent.value.has(newSid)) {
       hasConfigSent.value.set(newSid, false)
     }
+    // 重置干预状态
+    interventionState.value = 'normal'
   }
 }, { immediate: true })
+
+// 监听isStreaming变化，更新干预状态
+watch(() => props.isStreaming, (newStreaming) => {
+  if (newStreaming) {
+    interventionState.value = 'streaming'
+  } else if (interventionState.value === 'streaming' || interventionState.value === 'paused') {
+    interventionState.value = 'normal'
+  }
+})
+
+// 监听输入消息变化，如果在流式输出时有输入，状态变为instruct
+watch(() => props.inputMessage, (newMessage) => {
+  if (interventionState.value === 'streaming' && newMessage.trim()) {
+    // 输入内容时，从streaming变为可以instruct的状态
+  }
+})
+
+// 计算是否有输入内容
+const hasInputContent = computed(() => {
+  return props.inputMessage.trim().length > 0
+})
+
+// 获取按钮状态
+const getButtonState = () => {
+  if (interventionState.value === 'streaming') {
+    return hasInputContent.value ? 'instruct' : 'pause'
+  }
+  if (interventionState.value === 'paused') {
+    return 'instruct'
+  }
+  return 'send'
+}
+
+// 获取按钮样式
+const getButtonStyle = () => {
+  const buttonState = getButtonState()
+  
+  switch (buttonState) {
+    case 'pause':
+      return {
+        backgroundColor: '#ef4444',
+        borderColor: '#ef4444'
+      }
+    case 'instruct':
+      return {
+        backgroundColor: '#ffffff',
+        borderColor: '#d1d5db',
+        color: '#374151'
+      }
+    default: // send
+      return {
+        backgroundColor: '#22c55e',
+        borderColor: '#22c55e'
+      }
+  }
+}
+
+// 获取按钮图标
+const getButtonIcon = () => {
+  const buttonState = getButtonState()
+  
+  switch (buttonState) {
+    case 'pause':
+      return VideoPause // 暂停图标
+    case 'instruct':
+      return CaretTop // 向上箭头  
+    default: // send
+      return Promotion // 向右三角形（发送）
+  }
+}
+
+// 获取按钮文本 (用于title提示)
+const getButtonText = () => {
+  const buttonState = getButtonState()
+  
+  switch (buttonState) {
+    case 'pause':
+      return '暂停'
+    case 'instruct':
+      return 'Instruct'
+    default:
+      return props.isStreaming ? '生成中...' : '发送'
+  }
+}
 
 // 加载当前会话的文件列表
 const loadSessionFiles = async () => {
@@ -99,6 +194,22 @@ const handleKeyup = (e: KeyboardEvent) => {
 
 // 发送消息（点击按钮）
 const sendMessage = async () => {
+  const buttonState = getButtonState()
+  
+  // 根据按钮状态执行不同的操作
+  if (buttonState === 'pause') {
+    // 暂停流式输出
+    handlePauseStreaming()
+    return
+  }
+  
+  if (buttonState === 'instruct') {
+    // 发送干预指令
+    handleSendInstruction()
+    return
+  }
+  
+  // 正常发送消息
   if (props.inputMessage.trim() && !props.inputDisabled) {
     const sessionId = props.sid
     const userMessage = props.inputMessage.trim()
@@ -120,6 +231,23 @@ const sendMessage = async () => {
     // 发送用户的实际问题（总是使用 question 类型）
     emit('send-message', userMessage, selectedAgentType.value, 'question' as InputType, uploadedFiles.value.length > 0 ? uploadedFiles.value : undefined)
     // 注意：不再清空文件列表，交由用户手动管理
+  }
+}
+
+// 处理暂停流式输出
+const handlePauseStreaming = () => {
+  console.log('暂停流式输出')
+  interventionState.value = 'paused'
+  emit('pause-streaming')
+}
+
+// 处理发送干预指令
+const handleSendInstruction = () => {
+  if (props.inputMessage.trim()) {
+    console.log('发送干预指令:', props.inputMessage.trim())
+    emit('send-instruction', props.inputMessage.trim())
+    // 发送后重置状态
+    interventionState.value = 'normal'
   }
 }
 
@@ -321,7 +449,7 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
         resize="none" 
         placeholder="输入您的问题..."
         @keyup="handleKeyup"
-        :disabled="inputDisabled"
+        :disabled="false"
         @update:model-value="(val: string) => emit('update:input-message', val)"
         class="message-input"
       />
@@ -330,15 +458,17 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
       <el-button 
         type="primary" 
         @click="sendMessage" 
-        :loading="isLoading || isStreaming"
-        :disabled="inputDisabled || !inputMessage.trim()"
-        :icon="ArrowUp"
+        :loading="isLoading && getButtonState() === 'send'"
+        :disabled="getButtonState() === 'send' && (inputDisabled || !inputMessage.trim())"
         class="send-button"
-        style="background-color: rgb(102, 8, 116); border-color: rgb(102, 8, 116);"
-        title="发送消息"
-        round
+        :style="getButtonStyle()"
+        :title="getButtonText()"
+        circle
       >
-        {{ isStreaming ? '生成中...' : '发送' }}
+        <!-- 使用Element Plus图标 -->
+        <el-icon :size="16">
+          <component :is="getButtonIcon()" />
+        </el-icon>
       </el-button>
     </div>
 
@@ -415,6 +545,15 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
       :uid="props.uid"
       :sid="props.sid"
       @config-saved="handleConfigSaved"
+    />
+
+    <!-- LLM干预组件 -->
+    <LLMIntervention
+      ref="llmInterventionRef"
+      :state="interventionState"
+      :has-input="hasInputContent"
+      @pause-streaming="handlePauseStreaming"
+      @send-instruction="(instruction: string) => emit('send-instruction', instruction)"
     />
   </div>
 </template>
@@ -594,7 +733,8 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 .send-button {
   flex-shrink: 0;
   height: 40px;
-  min-width: 80px;
+  min-width: 40px;
+  width: 40px;
 }
 
 .control-button {

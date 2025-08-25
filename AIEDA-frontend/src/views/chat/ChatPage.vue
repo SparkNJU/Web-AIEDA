@@ -8,7 +8,7 @@ import ChatAside from './ChatAside.vue'
 import MessageList from './MessageList.vue'
 import ChatInput, { type AgentType, type InputType } from './ChatInput.vue'
 import WelcomeCard from './WelcomeCard.vue'
-import FilePreview from '../../components/FilePreview.vue'
+import FilePreview from '../../components/File/FilePreview.vue'
 // 导入API
 import { createSession, getSessionRecords, getUserSessions, sendMessageStream, updateSessionTitle, deleteSession } from '../../api/chat'
 import { type FileVO } from '../../api/file'

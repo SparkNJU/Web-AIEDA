@@ -4,6 +4,7 @@ import { ref, nextTick } from 'vue'
 import { ElIcon, ElButton, ElInput, ElMessageBox, ElMessage } from 'element-plus'
 import { Edit, Delete, ChatLineSquare } from '@element-plus/icons-vue'
 import { updateSessionTitle, deleteSession } from '../../api/chat'
+import LLMDeleteSession from '../../components/LLM/LLMDeleteSession.vue'
 import type { SessionRecord } from './ChatPage.vue'
 
 // 接收参数
@@ -22,6 +23,12 @@ const emit = defineEmits<{
 // 编辑状态管理
 const isEditing = ref(false)
 const editingTitle = ref(props.session.title)
+
+// LLMDeleteSession组件引用
+const deleteSessionRef = ref<InstanceType<typeof LLMDeleteSession>>()
+
+// 获取用户ID
+const getUserId = () => Number(sessionStorage.getItem('uid') || '0')
 
 // 编辑逻辑
 const handleEdit = (e: Event) => {
@@ -83,6 +90,15 @@ const handleDelete = async (e: Event) => {
         return
       }
       
+      // 先调用LLMDeleteSession的方法发送删除消息到后端
+      if (deleteSessionRef.value) {
+        const deleteResult = await deleteSessionRef.value.handleDeleteSession()
+        if (!deleteResult) {
+          ElMessage.error('发送删除请求失败')
+          return
+        }
+      }
+      
       await deleteSession(props.session.sid, Number(uid))
       emit('delete')
       ElMessage.success('会话删除成功')
@@ -141,6 +157,13 @@ const handleDelete = async (e: Event) => {
       />
     </template>
   </div>
+  
+  <!-- LLMDeleteSession组件 -->
+  <LLMDeleteSession 
+    ref="deleteSessionRef"
+    :uid="getUserId()"
+    :sid="session.sid"
+  />
 </template>
 
 <style scoped>

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElUpload, ElButton, ElIcon, ElMessage, ElPopover } from 'element-plus'
 import { Upload, Close, Paperclip } from '@element-plus/icons-vue'
-import { uploadFile, type FileVO, canPreviewFile } from '../api/file'
+import { uploadFile, type FileVO, canPreviewFile } from '../../api/file'
 
 // 组件属性
 const props = defineProps<{

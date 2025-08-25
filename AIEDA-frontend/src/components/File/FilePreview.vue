@@ -182,7 +182,7 @@ import {
   ArrowLeft, 
   ArrowRight 
 } from '@element-plus/icons-vue'
-import { getHierarchicalFileStructure, downloadFile as apiDownloadFile, previewFile, canPreviewFile, type FileVO } from '../api/file'
+import { getHierarchicalFileStructure, downloadFile as apiDownloadFile, previewFile, canPreviewFile, type FileVO } from '../../api/file'
 import FileTreeNodeRecursive from './FileTreeNodeRecursive.vue'
 
 // 组件属性
