@@ -76,6 +76,8 @@ public class ChatServiceImpl implements ChatService {
     private final ConcurrentHashMap<SseEmitter, AtomicLong> sseLastActivityMap = new ConcurrentHashMap<>();
     // 会话级别的SSE连接管理：每个会话ID对应一个SSE连接
     private final ConcurrentHashMap<Integer, SseEmitter> sessionSseMap = new ConcurrentHashMap<>();
+    // 会话ID到超时检查任务的映射，用于停止和重启超时计时
+    private final ConcurrentHashMap<Integer, java.util.concurrent.ScheduledFuture<?>> sessionTimeoutTasks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService timeoutScheduler = Executors.newScheduledThreadPool(2);
     private static final long INACTIVITY_TIMEOUT = 120000L; // 120秒无活动则超时
 
@@ -104,10 +106,16 @@ public class ChatServiceImpl implements ChatService {
         sessionSseMap.put(sid, emitter);
         log.info("[{}] 🔗 注册SSE连接超时监控 - 会话ID: {}", getCurrentTimestamp(), sid);
         
-        // 启动超时检查任务
-        timeoutScheduler.scheduleAtFixedRate(() -> {
+        // 停止旧的超时检查任务（如果存在）
+        stopSessionTimeoutMonitoring(sid);
+        
+        // 启动新的超时检查任务
+        java.util.concurrent.ScheduledFuture<?> timeoutTask = timeoutScheduler.scheduleAtFixedRate(() -> {
             checkSseTimeout(emitter);
         }, INACTIVITY_TIMEOUT, 5000L, TimeUnit.MILLISECONDS); // 每5秒检查一次
+        
+        // 保存任务引用，用于后续的停止和重启操作
+        sessionTimeoutTasks.put(sid, timeoutTask);
     }
 
     /**
@@ -125,6 +133,50 @@ public class ChatServiceImpl implements ChatService {
         AtomicLong lastActivity = sseLastActivityMap.get(emitter);
         if (lastActivity != null) {
             lastActivity.set(System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * 停止指定会话的超时监控
+     * 用于硬干预时暂停超时计时
+     */
+    private void stopSessionTimeoutMonitoring(Integer sid) {
+        java.util.concurrent.ScheduledFuture<?> timeoutTask = sessionTimeoutTasks.get(sid);
+        if (timeoutTask != null) {
+            timeoutTask.cancel(false); // false表示不中断正在执行的任务
+            sessionTimeoutTasks.remove(sid);
+            log.info("[{}] ⏸️  停止会话{}的超时监控", getCurrentTimestamp(), sid);
+        } else {
+            log.debug("[{}] 会话{}无超时监控任务需要停止", getCurrentTimestamp(), sid);
+        }
+    }
+
+    /**
+     * 重启指定会话的超时监控
+     * 用于软干预后恢复超时计时
+     */
+    private void restartSessionTimeoutMonitoring(Integer sid) {
+        // 首先停止现有的监控任务（如果存在）
+        stopSessionTimeoutMonitoring(sid);
+        
+        // 获取该会话对应的SSE连接
+        SseEmitter emitter = sessionSseMap.get(sid);
+        if (emitter != null) {
+            // 重置活跃时间
+            AtomicLong lastActivity = sseLastActivityMap.get(emitter);
+            if (lastActivity != null) {
+                lastActivity.set(System.currentTimeMillis());
+            }
+            
+            // 启动新的超时检查任务
+            java.util.concurrent.ScheduledFuture<?> timeoutTask = timeoutScheduler.scheduleAtFixedRate(() -> {
+                checkSseTimeout(emitter);
+            }, INACTIVITY_TIMEOUT, 5000L, TimeUnit.MILLISECONDS);
+            
+            sessionTimeoutTasks.put(sid, timeoutTask);
+            log.info("[{}] 🔄 重启会话{}的超时监控", getCurrentTimestamp(), sid);
+        } else {
+            log.warn("[{}] 无法重启会话{}的超时监控，SSE连接不存在", getCurrentTimestamp(), sid);
         }
     }
 
@@ -151,8 +203,21 @@ public class ChatServiceImpl implements ChatService {
      */
     private void closeSseConnection(SseEmitter emitter, String reason) {
         try {
-            // 从会话映射中移除
-            sessionSseMap.entrySet().removeIf(entry -> entry.getValue().equals(emitter));
+            // 找到对应的会话ID并清理超时任务
+            Integer sidToRemove = null;
+            for (java.util.Map.Entry<Integer, SseEmitter> entry : sessionSseMap.entrySet()) {
+                if (entry.getValue().equals(emitter)) {
+                    sidToRemove = entry.getKey();
+                    break;
+                }
+            }
+            
+            if (sidToRemove != null) {
+                // 停止超时监控任务
+                stopSessionTimeoutMonitoring(sidToRemove);
+                // 从会话映射中移除
+                sessionSseMap.remove(sidToRemove);
+            }
             
             // 清理超时监控
             sseLastActivityMap.remove(emitter);
@@ -314,13 +379,17 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public SseEmitter sendMessageSSE(Integer uid, Integer sid, String content) {
-        return sendMessageSSE(uid, sid, content, "orchestrator", "question"); // 默认使用orchestrator和question
+        return sendMessageSSE(uid, sid, content, null); // 使用空metadata
     }
 
     @Override
-    public SseEmitter sendMessageSSE(Integer uid, Integer sid, String content, String agentType, String inputType) {
-        log.info("[{}] 📨 开始处理SSE消息请求 - uid: {}, sid: {}, agentType: {}, inputType: {}", 
-                getCurrentTimestamp(), uid, sid, agentType, inputType);
+    public SseEmitter sendMessageSSE(Integer uid, Integer sid, String content, java.util.Map<String, Object> metadata) {
+        log.info("[{}] 📨 开始处理SSE消息请求 - uid: {}, sid: {}, metadata: {}", 
+                getCurrentTimestamp(), uid, sid, metadata);
+        
+        // 从metadata中提取agent_type和input_type，如果没有则使用默认值
+        String agentType = getStringFromMetadata(metadata, "agent_type", "orchestrator");
+        String inputType = getStringFromMetadata(metadata, "input_type", "question");
         
         // 🔗 获取或创建会话级SSE连接
         SseEmitter emitter = getOrCreateSessionSSE(uid, sid);
@@ -335,10 +404,57 @@ public class ChatServiceImpl implements ChatService {
         Record userRecord = new Record(sid, uid, true, content, nextSeq, MessageTypeConstant.USER, now);
         recordRepository.save(userRecord);
 
-        // 异步处理AI流式响应，使用会话级SSE连接
+        // 异步处理AI流式响应，使用会话级SSE连接，传递metadata
         final SseEmitter finalEmitter = emitter;
         CompletableFuture.runAsync(() -> {
-            processAIStreamResponse(finalEmitter, uid, sid, content, nextSeq, agentType, inputType);
+            processAIStreamResponse(finalEmitter, uid, sid, content, nextSeq, agentType, inputType, metadata);
+        });
+
+        return emitter;
+    }
+    
+    /**
+     * 从metadata中获取字符串值的辅助方法
+     */
+    private String getStringFromMetadata(java.util.Map<String, Object> metadata, String key, String defaultValue) {
+        if (metadata != null && metadata.containsKey(key)) {
+            Object value = metadata.get(key);
+            return value != null ? value.toString() : defaultValue;
+        }
+        return defaultValue;
+    }
+
+    @Override
+    public SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences) {
+        return sendMessageWithFilesSSE(uid, sid, content, fileReferences, null); // 使用空metadata
+    }
+
+    @Override
+    public SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences, java.util.Map<String, Object> metadata) {
+        log.info("[{}] 📨 开始处理带文件的SSE消息请求 - uid: {}, sid: {}, fileReferences: {}, metadata: {}", 
+                getCurrentTimestamp(), uid, sid, fileReferences, metadata);
+        
+        // 从metadata中提取agent_type和input_type，如果没有则使用默认值
+        String agentType = getStringFromMetadata(metadata, "agent_type", "orchestrator");
+        String inputType = getStringFromMetadata(metadata, "input_type", "question");
+        
+        // 🔗 获取或创建会话级SSE连接
+        SseEmitter emitter = getOrCreateSessionSSE(uid, sid);
+
+        // 更新会话时间，确保最新发送消息的会话显示在最上面
+        updateSessionTime(uid, sid);
+
+        // 保存用户消息
+        List<Record> existing = recordRepository.findBySidOrderBySequenceAsc(sid);
+        int nextSeq = existing.isEmpty() ? 1 : existing.size() + 1;
+        LocalDateTime now = LocalDateTime.now();
+        Record userRecord = new Record(sid, uid, true, content, nextSeq, MessageTypeConstant.USER, now);
+        recordRepository.save(userRecord);
+
+        // 异步处理AI流式响应，使用会话级SSE连接，传递文件引用和metadata
+        final SseEmitter finalEmitter = emitter;
+        CompletableFuture.runAsync(() -> {
+            processAIStreamResponseWithFiles(finalEmitter, uid, sid, content, fileReferences, nextSeq, agentType, inputType, metadata);
         });
 
         return emitter;
@@ -373,6 +489,14 @@ public class ChatServiceImpl implements ChatService {
      * 处理AI流式回复的完整流程（支持Agent类型和输入类型）
      */
     private void processAIStreamResponse(SseEmitter emitter, Integer uid, Integer sid, String content, int nextSeq, String agentType, String inputType) {
+        // 委托给支持metadata的完整版本，使用空metadata
+        processAIStreamResponse(emitter, uid, sid, content, nextSeq, agentType, inputType, null);
+    }
+
+    /**
+     * 处理AI流式回复的完整流程（支持Agent类型、输入类型和metadata）
+     */
+    private void processAIStreamResponse(SseEmitter emitter, Integer uid, Integer sid, String content, int nextSeq, String agentType, String inputType, java.util.Map<String, Object> requestMetadata) {
         StringBuilder aiReply = new StringBuilder();
         String userInputUrl = "http://localhost:8000/api/v1/user/input";
 
@@ -387,6 +511,12 @@ public class ChatServiceImpl implements ChatService {
             // 添加metadata，包含agent_type
             var metadata = new java.util.HashMap<String, Object>();
             metadata.put("agent_type", agentType != null ? agentType : "orchestrator");
+            
+            // 合并请求中的metadata（如干预类型信息）
+            if (requestMetadata != null && !requestMetadata.isEmpty()) {
+                metadata.putAll(requestMetadata);
+                log.info("[{}] 📋 合并请求metadata: {}", getCurrentTimestamp(), requestMetadata);
+            }
             
             // 如果是config类型，添加LLM配置
             String finalInputType = inputType != null ? inputType : "question";
@@ -985,37 +1115,14 @@ public class ChatServiceImpl implements ChatService {
         }
     }
 
-    @Override
-    public SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences) {
-        return sendMessageWithFilesSSE(uid, sid, content, fileReferences, "orchestrator", "question"); // 默认使用orchestrator和question
-    }
 
-    @Override
-    public SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences, String agentType, String inputType) {
-        log.info("[{}] 📨 开始处理带文件的SSE请求 - uid: {}, sid: {}, content: {}, files: {}, agentType: {}, inputType: {}", 
-                getCurrentTimestamp(), uid, sid, content, fileReferences, agentType, inputType);
 
-        // 🔗 获取或创建会话级SSE连接
-        SseEmitter emitter = getOrCreateSessionSSE(uid, sid);
-
-        // 更新会话时间，确保最新发送消息的会话显示在最上面
-        updateSessionTime(uid, sid);
-
-        // 保存用户消息
-        List<Record> existing = recordRepository.findBySidOrderBySequenceAsc(sid);
-        int nextSeq = existing.isEmpty() ? 1 : existing.size() + 1;
-        LocalDateTime now = LocalDateTime.now();
-        Record userRecord = new Record(sid, uid, true, content, nextSeq, MessageTypeConstant.USER, now);
-        recordRepository.save(userRecord);
-        log.info("[{}] 用户消息已保存 - recordId: {}", getCurrentTimestamp(), userRecord.getRid());
-
-        // 异步处理带文件的SSE流
-        CompletableFuture.runAsync(() -> {
-            processAIStreamResponseWithFiles(emitter, uid, sid, content, fileReferences, nextSeq, agentType, inputType);
-        });
-
-        log.info("[{}] 带文件的SSE emitter已创建并返回 - sid: {}", getCurrentTimestamp(), sid);
-        return emitter;
+    /**
+     * 处理带文件引用的AI流式回复（支持Agent类型和输入类型选择及metadata）
+     */
+    private void processAIStreamResponseWithFiles(SseEmitter emitter, Integer uid, Integer sid, String content, List<String> fileReferences, int nextSeq, String agentType, String inputType, java.util.Map<String, Object> metadata) {
+        // 委托给已有的带参数的方法实现
+        processAIStreamResponseWithFiles(emitter, uid, sid, content, fileReferences, nextSeq, agentType, inputType);
     }
 
     /**
@@ -1314,6 +1421,105 @@ public class ChatServiceImpl implements ChatService {
             sendErrorToFrontend(emitter, errorMessage);
         } else {
             log.warn("[{}] ⚠️ 会话 {} 没有活跃的SSE连接", getCurrentTimestamp(), sid);
+        }
+    }
+
+    @Override
+    public boolean sendMessageInput(Integer uid, Integer sid, String content, java.util.Map<String, Object> metadata, String inputType) {
+        log.info("[{}] 📨 发送非流式消息 - uid: {}, sid: {}, inputType: {}, metadata: {}", 
+                getCurrentTimestamp(), uid, sid, inputType, metadata);
+        
+        String userInputUrl = "http://localhost:8000/api/v1/user/input";
+        
+        try {
+            // 更新会话时间，确保最新发送消息的会话显示在最上面
+            updateSessionTime(uid, sid);
+
+            // 构建发送给大模型的请求
+            var inputRequest = new java.util.HashMap<String, Object>();
+            inputRequest.put("session_id", sid.toString());
+            inputRequest.put("user_id", uid.toString());
+            inputRequest.put("input_text", content != null ? content : "");
+            inputRequest.put("input_type", inputType != null ? inputType : "question");
+            
+            // 添加metadata，默认包含agent_type
+            var requestMetadata = new java.util.HashMap<String, Object>();
+            requestMetadata.put("agent_type", "orchestrator"); // 默认agent类型
+            
+            // 合并请求中的metadata
+            if (metadata != null && !metadata.isEmpty()) {
+                requestMetadata.putAll(metadata);
+                log.info("[{}] 📋 合并请求metadata: {}", getCurrentTimestamp(), metadata);
+            }
+            
+            // 如果是config类型，添加LLM配置
+            if ("config".equals(inputType)) {
+                var llmConfig = new java.util.HashMap<String, Object>();
+                llmConfig.put("api_key", openaiApiKey);
+                llmConfig.put("base_url", openaiBaseUrl);
+                llmConfig.put("model", openaiModel);
+                requestMetadata.put("llm_config", llmConfig);
+                
+                // 添加其他配置参数
+                requestMetadata.put("execution_model", executionModel);
+                requestMetadata.put("temperature", temperature);
+                requestMetadata.put("max_tokens", maxTokens);
+                
+                log.info("[{}] 🔧 添加LLM配置到config请求", getCurrentTimestamp());
+            }
+            
+            inputRequest.put("metadata", requestMetadata);
+
+            log.info("[{}] 🚀 发送非流式请求到大模型 - URL: {}, Request: {}", 
+                    getCurrentTimestamp(), userInputUrl, inputRequest);
+
+            // 发送请求到大模型
+            var inputResponse = restTemplate.postForObject(userInputUrl, inputRequest, java.util.Map.class);
+            
+            if (inputResponse == null) {
+                log.error("[{}] ❌ 大模型响应为空", getCurrentTimestamp());
+                return false;
+            }
+            
+            log.info("[{}] ✅ 大模型响应: {}", getCurrentTimestamp(), inputResponse);
+            
+            // 检查响应状态
+            if ("success".equals(inputResponse.get("status"))) {
+                log.info("[{}] ✅ 非流式消息发送成功 - inputType: {}", getCurrentTimestamp(), inputType);
+                return true;
+            } else {
+                log.error("[{}] ❌ 大模型返回错误状态: {}", getCurrentTimestamp(), inputResponse.get("status"));
+                return false;
+            }
+            
+        } catch (Exception e) {
+            log.error("[{}] ❌ 发送非流式消息失败 - uid: {}, sid: {}, inputType: {}", 
+                    getCurrentTimestamp(), uid, sid, inputType, e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean stopSessionTimeout(Integer sid) {
+        try {
+            stopSessionTimeoutMonitoring(sid);
+            log.info("[{}] 🛑 成功停止会话{}的超时监控", getCurrentTimestamp(), sid);
+            return true;
+        } catch (Exception e) {
+            log.error("[{}] ❌ 停止会话{}超时监控失败", getCurrentTimestamp(), sid, e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean restartSessionTimeout(Integer sid) {
+        try {
+            restartSessionTimeoutMonitoring(sid);
+            log.info("[{}] 🔄 成功重启会话{}的超时监控", getCurrentTimestamp(), sid);
+            return true;
+        } catch (Exception e) {
+            log.error("[{}] ❌ 重启会话{}超时监控失败", getCurrentTimestamp(), sid, e);
+            return false;
         }
     }
 }

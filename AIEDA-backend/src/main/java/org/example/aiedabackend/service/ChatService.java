@@ -33,9 +33,9 @@ public interface ChatService {
     SseEmitter sendMessageSSE(Integer uid, Integer sid, String content);
 
     /**
-     * 发送消息，并通过SSE流式返回AI回复（支持Agent类型和输入类型选择）
+     * 发送消息，并通过SSE流式返回AI回复（支持metadata）
      */
-    SseEmitter sendMessageSSE(Integer uid, Integer sid, String content, String agentType, String inputType);
+    SseEmitter sendMessageSSE(Integer uid, Integer sid, String content, java.util.Map<String, Object> metadata);
 
     /**
      * 发送带文件引用的消息，并通过SSE流式返回AI回复
@@ -43,9 +43,9 @@ public interface ChatService {
     SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences);
 
     /**
-     * 发送带文件引用的消息，并通过SSE流式返回AI回复（支持Agent类型和输入类型选择）
+     * 发送带文件引用的消息，并通过SSE流式返回AI回复（支持metadata）
      */
-    SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences, String agentType, String inputType);
+    SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences, java.util.Map<String, Object> metadata);
 
     /**
      * 发送配置消息（不等待流式回复，仅发送配置）
@@ -66,4 +66,22 @@ public interface ChatService {
      * 删除会话及其所有记录
      */
     boolean deleteSession(Integer uid, Integer sid);
+
+    /**
+     * 发送非流式消息（用于config、delete、intervention类型）
+     * 不建立SSE连接，直接发送到大模型
+     */
+    boolean sendMessageInput(Integer uid, Integer sid, String content, java.util.Map<String, Object> metadata, String inputType);
+
+    /**
+     * 停止指定会话的SSE连接超时监控
+     * 用于硬干预时暂停超时计时
+     */
+    boolean stopSessionTimeout(Integer sid);
+
+    /**
+     * 重启指定会话的SSE连接超时监控
+     * 用于软干预后恢复超时计时
+     */
+    boolean restartSessionTimeout(Integer sid);
 }
