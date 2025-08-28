@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { sendMessageStream } from '../../api/chat'
+import { sendMessageInput } from '../../api/chat'
 
 // 定义props
 const props = defineProps<{
@@ -39,16 +39,14 @@ const handleDeleteSession = async (): Promise<boolean> => {
 
     console.log('发送删除会话请求:', requestData)
     
-    // 调用 ChatPage 的 sendMessageStream 方法
-    const response = await sendMessageStream(requestData)
+    // 使用非流式接口发送删除请求
+    const response = await sendMessageInput(requestData)
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+    if (response.code !== '200') {
+      throw new Error(`删除请求失败: ${response.message}`)
     }
 
-    // 对于删除操作，不需要等待大模型回复，可以直接中断SSE连接
-    // 但我们需要确认请求已经发送成功
-    console.log('删除请求发送成功，状态:', response.status)
+    console.log('删除请求发送成功')
     
     // 发出删除确认事件
     emit('delete-confirmed')

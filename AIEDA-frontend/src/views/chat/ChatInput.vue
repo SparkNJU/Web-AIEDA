@@ -50,6 +50,9 @@ const llmInterventionRef = ref<InstanceType<typeof LLMIntervention>>()
 // LLM配置相关
 const showLLMConfig = ref(false)
 
+// 调试用的状态跟踪
+const lastDebugKey = ref('')
+
 // 定义LLM配置数据类型
 interface LLMConfigData {
   apiKey: string
@@ -66,10 +69,14 @@ const agentOptions = [
 // 监听会话ID变化，加载对应的文件列表
 watch(() => props.sid, async (newSid, oldSid) => {
   if (newSid !== oldSid && newSid > 0) {
+    console.log('会话切换:', { from: oldSid, to: newSid })
     await loadSessionFiles()
-    // 重置当前会话的配置发送状态
+    // 重置当前会话的配置发送状态（如果是新会话）
     if (!hasConfigSent.value.has(newSid)) {
       hasConfigSent.value.set(newSid, false)
+      console.log('新会话，配置状态设为false:', newSid)
+    } else {
+      console.log('已存在会话，配置状态:', hasConfigSent.value.get(newSid), '会话ID:', newSid)
     }
     // 重置干预状态
     interventionState.value = 'normal'
@@ -77,18 +84,38 @@ watch(() => props.sid, async (newSid, oldSid) => {
 }, { immediate: true })
 
 // 监听isStreaming变化，更新干预状态
-watch(() => props.isStreaming, (newStreaming) => {
+watch(() => props.isStreaming, (newStreaming, oldStreaming) => {
+  console.log('isStreaming变化:', { from: oldStreaming, to: newStreaming, currentState: interventionState.value })
+  
   if (newStreaming) {
-    interventionState.value = 'streaming'
-  } else if (interventionState.value === 'streaming' || interventionState.value === 'paused') {
-    interventionState.value = 'normal'
+    // 如果外部通知开始流式输出，确保状态为streaming
+    if (interventionState.value === 'normal') {
+      interventionState.value = 'streaming'
+      console.log('外部通知开始流式输出，状态设置为streaming')
+    }
+  } else {
+    // 如果流式输出结束，重置为normal状态
+    if (interventionState.value === 'streaming' || interventionState.value === 'paused') {
+      interventionState.value = 'normal'
+      console.log('流式输出结束，状态重置为normal')
+    }
   }
 })
 
-// 监听输入消息变化，如果在流式输出时有输入，状态变为instruct
-watch(() => props.inputMessage, (newMessage) => {
-  if (interventionState.value === 'streaming' && newMessage.trim()) {
-    // 输入内容时，从streaming变为可以instruct的状态
+// 监听输入消息变化，如果在流式输出或暂停时有输入，状态变为instruct
+watch(() => props.inputMessage, (newMessage, oldMessage) => {
+  const hasInput = newMessage.trim().length > 0
+  const wasEmpty = oldMessage?.trim().length === 0
+  
+  if ((interventionState.value === 'streaming' || interventionState.value === 'paused')) {
+    const currentButtonState = getButtonState()
+    console.log('输入消息变化:', { 
+      currentState: interventionState.value,
+      hasInput,
+      wasEmpty: wasEmpty ?? true,
+      buttonState: currentButtonState,
+      messageLength: newMessage.length
+    })
   }
 })
 
@@ -99,13 +126,32 @@ const hasInputContent = computed(() => {
 
 // 获取按钮状态
 const getButtonState = () => {
-  if (interventionState.value === 'streaming') {
-    return hasInputContent.value ? 'instruct' : 'pause'
+  const state = interventionState.value
+  const hasInput = hasInputContent.value
+  
+  let buttonState: string
+  
+  if (state === 'streaming') {
+    buttonState = hasInput ? 'instruct' : 'pause'
+  } else if (state === 'paused') {
+    buttonState = 'instruct'
+  } else {
+    buttonState = 'send'
   }
-  if (interventionState.value === 'paused') {
-    return 'instruct'
+  
+  // 添加调试日志（只在状态变化时输出，避免过多日志）
+  const debugKey = `${state}-${hasInput}`
+  if (lastDebugKey.value !== debugKey) {
+    console.log('按钮状态计算:', { 
+      interventionState: state, 
+      hasInputContent: hasInput, 
+      buttonState,
+      inputMessage: props.inputMessage.slice(0, 20) + (props.inputMessage.length > 20 ? '...' : '')
+    })
+    lastDebugKey.value = debugKey
   }
-  return 'send'
+  
+  return buttonState
 }
 
 // 获取按钮样式
@@ -214,40 +260,89 @@ const sendMessage = async () => {
     const sessionId = props.sid
     const userMessage = props.inputMessage.trim()
     
-    // 检查是否需要先发送配置（隐式发送，用户不可见）
+    // 检查是否需要先发送默认配置（仅在用户未主动配置过的情况下）
     if (!hasConfigSent.value.get(sessionId)) {
-      console.log('首次发送问题，先隐式发送配置')
+      console.log('会话首次发送问题，且用户未配置过LLM，先发送默认配置')
     
-      // 隐式发送配置信息，不显示给用户
+      // 发送默认配置（空配置，使用系统默认）
       emit('send-message', '', selectedAgentType.value, 'config' as InputType, undefined)
       
-      // 标记配置已发送
+      // 标记配置已发送（自动发送的默认配置）
       hasConfigSent.value.set(sessionId, true)
+      console.log('默认配置已发送并标记，会话ID:', sessionId)
       
       // 等待一小段时间确保配置处理完成
       await new Promise(resolve => setTimeout(resolve, 500))
+    } else {
+      console.log('会话已有配置，直接发送问题，会话ID:', sessionId)
     }
     
     // 发送用户的实际问题（总是使用 question 类型）
     emit('send-message', userMessage, selectedAgentType.value, 'question' as InputType, uploadedFiles.value.length > 0 ? uploadedFiles.value : undefined)
+    
+    // 发送消息后，主动设置状态为streaming
+    interventionState.value = 'streaming'
+    console.log('消息已发送，状态设置为streaming')
+    
     // 注意：不再清空文件列表，交由用户手动管理
   }
 }
 
 // 处理暂停流式输出
-const handlePauseStreaming = () => {
-  console.log('暂停流式输出')
-  interventionState.value = 'paused'
-  emit('pause-streaming')
+const handlePauseStreaming = async () => {
+  console.log('触发硬干预暂停')
+  
+  // 使用LLMIntervention组件的硬干预功能
+  if (llmInterventionRef.value) {
+    const success = await llmInterventionRef.value.handleHardIntervention()
+    if (success) {
+      interventionState.value = 'paused'
+      console.log('硬干预成功，状态切换为paused')
+    } else {
+      console.error('硬干预失败')
+    }
+  } else {
+    // 兜底处理：直接发射事件
+    console.log('LLMIntervention组件未找到，使用兜底处理')
+    interventionState.value = 'paused'
+    emit('pause-streaming')
+  }
 }
 
 // 处理发送干预指令
-const handleSendInstruction = () => {
+const handleSendInstruction = async () => {
   if (props.inputMessage.trim()) {
-    console.log('发送干预指令:', props.inputMessage.trim())
-    emit('send-instruction', props.inputMessage.trim())
-    // 发送后重置状态
-    interventionState.value = 'normal'
+    console.log('发送软干预指令:', props.inputMessage.trim())
+    
+    // 记录当前状态
+    const wasInPausedState = interventionState.value === 'paused'
+    
+    // 使用LLMIntervention组件的软干预功能
+    if (llmInterventionRef.value) {
+      const success = await llmInterventionRef.value.handleSoftIntervention(props.inputMessage.trim())
+      if (success) {
+        // 发送成功后的状态处理
+        if (wasInPausedState) {
+          // 如果之前是paused状态，现在应该回到streaming状态
+          interventionState.value = 'streaming'
+          console.log('软干预发送成功，从paused状态恢复到streaming状态')
+        } else {
+          // 如果之前是streaming状态，继续保持streaming状态
+          console.log('软干预发送成功，继续保持streaming状态')
+        }
+        
+        // 清空输入框
+        emit('update:input-message', '')
+      } else {
+        console.error('软干预发送失败')
+      }
+    } else {
+      // 兜底处理：直接发射事件
+      console.log('LLMIntervention组件未找到，使用兜底处理')
+      emit('send-instruction', props.inputMessage.trim())
+      interventionState.value = wasInPausedState ? 'streaming' : 'normal'
+      emit('update:input-message', '')
+    }
   }
 }
 
@@ -348,7 +443,7 @@ const openFilePreview = () => {
 
 const handleConfigSaved = async (configData: LLMConfigData | null) => {
   try {
-    console.log('保存LLM配置:', configData)
+    console.log('用户保存LLM配置:', configData)
     
     if (configData) {
       // 自定义模式：将配置数据序列化为JSON字符串传递
@@ -363,8 +458,9 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
       emit('send-message', "", selectedAgentType.value, 'config' as InputType, undefined)
     }
     
-    // 标记配置已发送
+    // 标记配置已发送（用户主动配置）
     hasConfigSent.value.set(props.sid, true)
+    console.log('用户配置已发送并标记，会话ID:', props.sid)
     
     ElMessage.success('LLM配置已保存')
     
@@ -552,6 +648,8 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
       ref="llmInterventionRef"
       :state="interventionState"
       :has-input="hasInputContent"
+      :uid="props.uid"
+      :sid="props.sid"
       @pause-streaming="handlePauseStreaming"
       @send-instruction="(instruction: string) => emit('send-instruction', instruction)"
     />

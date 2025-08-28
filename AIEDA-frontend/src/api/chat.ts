@@ -24,12 +24,9 @@ export interface ChatRequestVO {
   content: string
   sid: number
   fileReferences?: string[] // 添加文件引用
-  agentType?: 'orchestrator' | 'dynamic' // 添加Agent类型参数
   inputType?: 'question' | 'config' | 'intervention' | 'delete' // 添加输入类型参数
-  // LLM自定义配置字段（仅在inputType为config时使用）
-  apiKey?: string // 自定义API Key
-  baseUrl?: string // 自定义Base URL
-  model?: string // 自定义模型
+  // 元数据字段（用于传递所有可选配置信息）
+  metadata?: Record<string, any>
 }
 
 export interface CreateSessionRequestVO {
@@ -65,6 +62,32 @@ export const sendMessageStream = async (data: ChatRequestVO): Promise<Response> 
   return response
 }
 
+// 发送非流式消息 - 用于config、delete、intervention类型
+export const sendMessageInput = async (data: ChatRequestVO): Promise<any> => {
+  const token = getToken()
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json'
+  }
+  
+  // 如果有token，添加到headers中
+  if (token) {
+    headers['token'] = token
+  }
+  
+  // 使用非流式消息的URL路径
+  const response = await fetch(`${BASE_URL}${CHAT_MODULE}/messages/${data.sid}/input`, {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(data)
+  })
+  
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  
+  return await response.json()
+}
+
 
 export const createSession = (uid: number, title: string = '新会话') => {
   return axios.post(`${CHAT_MODULE}/sessions`, { uid, title })
@@ -84,4 +107,14 @@ export const updateSessionTitle = (uid: number, sid: number, title: string) => {
 
 export const deleteSession = (sid: number, uid: number) => {
   return axios.delete(`${CHAT_MODULE}/sessions/${sid}`, { data: { uid } })
+}
+
+// 停止会话超时监控（用于硬干预）
+export const stopSessionTimeout = (sid: number) => {
+  return axios.post(`${CHAT_MODULE}/sessions/${sid}/timeout/stop`)
+}
+
+// 重启会话超时监控（用于软干预后恢复）
+export const restartSessionTimeout = (sid: number) => {
+  return axios.post(`${CHAT_MODULE}/sessions/${sid}/timeout/restart`)
 }

@@ -10,7 +10,7 @@ import ChatInput, { type AgentType, type InputType } from './ChatInput.vue'
 import WelcomeCard from './WelcomeCard.vue'
 import FilePreview from '../../components/File/FilePreview.vue'
 // 导入API
-import { createSession, getSessionRecords, getUserSessions, sendMessageStream, updateSessionTitle, deleteSession } from '../../api/chat'
+import { createSession, getSessionRecords, getUserSessions, sendMessageStream, sendMessageInput, updateSessionTitle, deleteSession } from '../../api/chat'
 import { type FileVO } from '../../api/file'
 
 // 类型定义
@@ -332,8 +332,13 @@ const handleSendMessage = async (messageToSend: string, agentType: AgentType, in
   const sessionId = currentSessionId.value
   const sessionState = sessionStates.value[sessionId]
   
-  // 如果是config类型的请求，不创建用户消息气泡
-  if (inputType !== 'config') {
+  // 根据输入类型决定使用流式还是非流式接口
+  if (inputType === 'config' || inputType === 'intervention' || inputType === 'delete') {
+    // 这些类型使用非流式接口，不需要建立SSE连接
+    await handleSendMessageInput(messageToSend, files, agentType, inputType)
+  } else {
+    // question类型使用流式接口
+    
     // 添加用户消息到界面
     let displayMessage = messageToSend
     if (files && files.length > 0) {
@@ -351,10 +356,70 @@ const handleSendMessage = async (messageToSend: string, agentType: AgentType, in
     sessionState.inputMessage = ''
     scrollToBottom()
     updateSessionTime()
-  }
 
-  // 使用流式输出发送消息（带文件或不带文件），传递agentType和inputType
-  await handleSendMessageStream(messageToSend, files, agentType, inputType)
+    // 使用流式输出发送消息
+    await handleSendMessageStream(messageToSend, files, agentType, inputType)
+  }
+}
+
+// 非流式消息发送（用于config、delete、intervention类型）
+const handleSendMessageInput = async (messageToSend: string, files?: FileVO[], agentType: AgentType = 'orchestrator', inputType: InputType = 'question') => {
+  const sessionId = currentSessionId.value
+  
+  try {
+    console.log('发送非流式消息:', { messageToSend, agentType, inputType, sessionId })
+    
+    // 解析配置信息（如果是config类型的消息）
+    let configData = null
+    let actualMessage = messageToSend
+    let metadata: Record<string, any> = {
+      agent_type: agentType
+    }
+    
+    if (inputType === 'config' && messageToSend) {
+      try {
+        configData = JSON.parse(messageToSend)
+        actualMessage = "" // config类型的消息内容为空
+        // 将配置信息添加到metadata中
+        metadata.llm_config = {
+          api_key: configData.apiKey,
+          base_url: configData.baseUrl,
+          model: configData.model
+        }
+      } catch (e) {
+        console.warn('无法解析config消息，使用默认配置:', e)
+        actualMessage = ""
+      }
+    }
+    
+    // 准备请求数据
+    const requestData = {
+      uid: userId.value,
+      sid: sessionId,
+      content: actualMessage,
+      inputType: inputType,
+      metadata: metadata,
+      fileReferences: files?.map(f => f.fileId)
+    }
+    
+    // 发送非流式请求
+    const response = await sendMessageInput(requestData)
+    
+    if (response.code !== '200') {
+      throw new Error(response.message || '发送失败')
+    }
+    
+    console.log('非流式消息发送成功:', inputType)
+    
+    // 对于config类型，显示成功提示
+    if (inputType === 'config') {
+      ElMessage.success('LLM配置已应用')
+    }
+    
+  } catch (error) {
+    console.error('非流式消息发送失败:', error)
+    ElMessage.error(`发送${inputType}消息失败: ${error instanceof Error ? error.message : '未知错误'}`)
+  }
 }
 
 // 流式消息发送
@@ -401,15 +466,17 @@ const handleSendMessageStream = async (messageToSend: string, files?: FileVO[], 
       sid: sessionId,
       content: actualMessage,
       fileReferences: files && files.length > 0 ? files.map(f => f.fileId) : undefined,
-      agentType: agentType, // 传递Agent类型
-      inputType: inputType // 传递输入类型
+      inputType: inputType, // 传递输入类型
+      metadata: {
+        agent_type: agentType // 将agentType放在metadata中
+      }
     }
     
-    // 如果是config类型且有配置数据，添加配置字段
+    // 如果是config类型且有配置数据，添加配置字段到metadata
     if (inputType === 'config' && configData) {
-      requestData.apiKey = configData.apiKey
-      requestData.baseUrl = configData.baseUrl
-      requestData.model = configData.model
+      requestData.metadata.api_key = configData.apiKey
+      requestData.metadata.base_url = configData.baseUrl
+      requestData.metadata.model = configData.model
     }
 
     // 使用统一的消息发送接口

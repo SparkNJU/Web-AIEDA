@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { sendMessageInput, stopSessionTimeout, restartSessionTimeout } from '../../api/chat'
+
 // 定义干预状态类型
 export type InterventionState = 'normal' | 'streaming' | 'paused' | 'instruct'
 
@@ -6,6 +10,8 @@ export type InterventionState = 'normal' | 'streaming' | 'paused' | 'instruct'
 const props = defineProps<{
   state: InterventionState
   hasInput: boolean
+  uid: number
+  sid: number
 }>()
 
 // 事件传递
@@ -15,14 +21,125 @@ const emit = defineEmits<{
   'resume-streaming': []
 }>()
 
+// 响应式数据
+const processing = ref(false)
+
+// 处理硬干预（暂停流式输出）
+const handleHardIntervention = async (): Promise<boolean> => {
+  if (processing.value) return false
+  
+  processing.value = true
+  
+  try {
+    // 1. 首先停止SSE会话超时计时
+    console.log('停止会话超时计时:', props.sid)
+    const timeoutResponse = await stopSessionTimeout(props.sid)
+    
+    if (!timeoutResponse || timeoutResponse.data.code !== '200') {
+      throw new Error('停止超时计时失败')
+    }
+    
+    console.log('超时计时已停止')
+    
+    // 2. 发送硬干预信号到后端（使用非流式接口）
+    const requestData = {
+      uid: props.uid,
+      sid: props.sid,
+      content: "",
+      inputType: "intervention" as "intervention",
+      metadata: {
+        type: "hard"
+      }
+    }
+
+    console.log('发送硬干预信号:', requestData)
+    
+    // 使用非流式接口发送硬干预信号
+    const response = await sendMessageInput(requestData)
+
+    if (response.code !== '200') {
+      throw new Error(`硬干预请求失败: ${response.message}`)
+    }
+
+    console.log('硬干预信号发送成功')
+    
+    // 发出暂停事件
+    emit('pause-streaming')
+    
+    return true
+    
+  } catch (error) {
+    console.error('硬干预失败:', error)
+    ElMessage.error('暂停失败，请重试')
+    return false
+  } finally {
+    processing.value = false
+  }
+}
+
 // 处理暂停流式输出
 const handlePause = () => {
-  emit('pause-streaming')
+  handleHardIntervention()
+}
+
+// 处理软干预（发送指令）
+const handleSoftIntervention = async (instruction: string): Promise<boolean> => {
+  if (processing.value) return false
+  
+  processing.value = true
+  
+  try {
+    // 如果当前是paused状态，需要重启超时计时
+    if (props.state === 'paused') {
+      console.log('从paused状态发送软干预，重启超时计时:', props.sid)
+      const restartResponse = await restartSessionTimeout(props.sid)
+      
+      if (!restartResponse || restartResponse.data.code !== '200') {
+        console.warn('重启超时计时失败，但继续发送软干预')
+      } else {
+        console.log('超时计时已重启')
+      }
+    }
+    
+    // 发送软干预信号到后端（使用非流式接口）
+    const requestData = {
+      uid: props.uid,
+      sid: props.sid,
+      content: instruction,
+      inputType: "intervention" as "intervention",
+      metadata: {
+        type: "soft"
+      }
+    }
+
+    console.log('发送软干预信号:', requestData)
+    
+    // 使用非流式接口发送软干预信号
+    const response = await sendMessageInput(requestData)
+
+    if (response.code !== '200') {
+      throw new Error(`软干预请求失败: ${response.message}`)
+    }
+
+    console.log('软干预信号发送成功')
+    
+    // 发出指令事件
+    emit('send-instruction', instruction)
+    
+    return true
+    
+  } catch (error) {
+    console.error('软干预失败:', error)
+    ElMessage.error('发送指令失败，请重试')
+    return false
+  } finally {
+    processing.value = false
+  }
 }
 
 // 处理发送指令
 const handleInstruct = (instruction: string) => {
-  emit('send-instruction', instruction)
+  handleSoftIntervention(instruction)
 }
 
 // 根据状态和输入确定按钮显示
@@ -115,7 +232,10 @@ defineExpose({
   getButtonStyle,
   getButtonText,
   getButtonIcon,
-  getClickHandler
+  getClickHandler,
+  handleHardIntervention,
+  handleSoftIntervention,
+  processing
 })
 </script>
 
