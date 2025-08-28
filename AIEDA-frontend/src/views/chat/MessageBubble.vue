@@ -4,7 +4,7 @@ import { ElCard } from 'element-plus'
 import MarkdownIt from 'markdown-it'
 import texmath from 'markdown-it-texmath'
 import katex from 'katex'
-import { watch, computed } from 'vue'
+import { watch, computed, ref, nextTick } from 'vue'
 import 'katex/dist/katex.min.css'
 
 // 接收单个消息参数
@@ -14,6 +14,9 @@ const props = defineProps<{
   isStreaming?: boolean // 是否正在流式输出
   isError?: boolean // 是否为错误消息
 }>()
+
+// 响应式变量来控制气泡的最小高度
+const bubbleMinHeight = ref('auto')
 
 const md = new MarkdownIt({
   html: true,
@@ -45,6 +48,9 @@ const md = new MarkdownIt({
 
 // 添加watch来调试props变化，同时优化性能
 watch(() => props.content, (newContent, oldContent) => {
+  // 当内容变化时，重置气泡高度
+  bubbleMinHeight.value = 'auto'
+  
   if (!props.isUser) {
     console.log('MessageBubble content 更新:', {
       old: oldContent?.substring(0, 30) + '...',
@@ -210,7 +216,7 @@ const processedContent = computed(() => {
 })
 
 // 添加点击处理函数
-const handleTagClick = (event: Event) => {
+const handleTagClick = async (event: Event) => {
   const target = event.target as HTMLElement
   
   console.log('标签点击事件:', {
@@ -255,7 +261,59 @@ const handleTagClick = (event: Event) => {
         newDisplay: expandedContent.style.display,
         timestamp: new Date().toLocaleTimeString()
       })
+      
+      // 如果是展开操作，检查是否需要扩展气泡高度
+      if (isCurrentlyHidden) {
+        await nextTick() // 等待DOM更新
+        checkAndAdjustBubbleHeight(expandedContent, target)
+      } else {
+        // 如果是收起操作，重置气泡高度
+        bubbleMinHeight.value = 'auto'
+      }
     }
+  }
+}
+
+// 检查并调整气泡高度的函数
+const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement: HTMLElement) => {
+  try {
+    // 获取气泡容器元素
+    const bubbleElement = triggerElement.closest('.el-card')
+    if (!bubbleElement) {
+      console.warn('未找到气泡容器元素')
+      return
+    }
+    
+    // 等待一小段时间确保样式已应用
+    setTimeout(() => {
+      // 获取当前气泡的边界
+      const bubbleRect = bubbleElement.getBoundingClientRect()
+      const expandedRect = expandedContent.getBoundingClientRect()
+      
+      console.log('气泡和展开内容位置信息:', {
+        bubbleBottom: bubbleRect.bottom,
+        expandedBottom: expandedRect.bottom,
+        bubbleHeight: bubbleRect.height,
+        expandedHeight: expandedRect.height,
+        needsExtension: expandedRect.bottom > bubbleRect.bottom
+      })
+      
+      // 如果展开内容的底部超出了气泡的底部
+      if (expandedRect.bottom > bubbleRect.bottom) {
+        const additionalHeight = expandedRect.bottom - bubbleRect.bottom + 24 // 额外添加24px的缓冲空间
+        const newMinHeight = bubbleRect.height + additionalHeight
+        
+        console.log('需要扩展气泡高度:', {
+          originalHeight: bubbleRect.height,
+          additionalHeight,
+          newMinHeight
+        })
+        
+        bubbleMinHeight.value = `${newMinHeight}px`
+      }
+    }, 50) // 50ms的延迟确保DOM完全更新
+  } catch (error) {
+    console.error('检查气泡高度时发生错误:', error)
   }
 }
 </script>
@@ -268,6 +326,7 @@ const handleTagClick = (event: Event) => {
     ]"
     shadow="never"
     body-style="padding:12px 16px; display: inline-block"
+    :style="{ minHeight: bubbleMinHeight }"
   >
     <!-- 用户消息 -->
     <template v-if="props.isUser">
@@ -306,12 +365,14 @@ const handleTagClick = (event: Event) => {
   background-color: rgba(102, 8, 116, 0.08);
   border: 1px solid rgba(102, 8, 116, 0.2);
   border-radius: 12px;
+  transition: min-height 0.3s ease-out;
 }
 
 .ai-message {
   background-color: #ffffff;
   border: 1px solid #e8e8e8;
   border-radius: 12px;
+  transition: min-height 0.3s ease-out;
 }
 
 .streaming-message {
