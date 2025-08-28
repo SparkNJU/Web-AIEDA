@@ -61,6 +61,12 @@ const previewFileId = ref('')
 const previewFile = ref<FileVO | null>(null)
 const asideCollapsed = ref(false) // 侧边栏收起状态
 
+// 拖拽调整宽度相关状态
+const chatMainWidth = ref(50) // 对话窗口宽度百分比，默认50%
+const isResizingMain = ref(false)
+const directoryWidth = ref(250) // 文件目录宽度，默认250px
+const isResizingDirectory = ref(false)
+
 const suggestionQuestions = [
 "AI 如何提升 EDA 全链路仿真性能？有实测吗？",
 "系统级仿真各环节如何衔接？传递函数作用？",
@@ -125,10 +131,8 @@ const inputDisabled = computed(() => {
 const chatLayoutWidth = computed(() => {
   if (!showFilePreview.value) return '100%'
   
-  // 如果显示文件预览，根据侧边栏状态调整宽度
-  // 侧边栏收起时：180px -> 48px，节省了132px
-  // 侧边栏展开时：保持55%
-  return asideCollapsed.value ? '50%' : '50%'  // 侧边栏收起时可以给聊天区域更多空间
+  // 返回动态的宽度百分比，确保不会超出屏幕
+  return `${Math.max(30, Math.min(70, chatMainWidth.value))}%`
 })
 
 // 检查当前会话是否有文件（简化实现）
@@ -148,6 +152,14 @@ onUnmounted(() => {
     clearTimeout(scrollTimer)
     scrollTimer = null
   }
+  
+  // 清理拖拽相关的事件监听器
+  document.removeEventListener('mousemove', handleResizeMain)
+  document.removeEventListener('mouseup', stopResizeMain)
+  document.removeEventListener('mousemove', handleResizeDirectory)
+  document.removeEventListener('mouseup', stopResizeDirectory)
+  document.body.style.cursor = 'auto'
+  document.body.style.userSelect = 'auto'
 })
 
 // 加载用户会话列表
@@ -766,6 +778,77 @@ const closeFilePreview = () => {
   asideCollapsed.value = false // 展开侧边栏
 }
 
+// 主窗口拖拽调整宽度的方法
+const startResizeMain = (e: MouseEvent) => {
+  e.preventDefault()
+  isResizingMain.value = true
+  document.addEventListener('mousemove', handleResizeMain)
+  document.addEventListener('mouseup', stopResizeMain)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+const handleResizeMain = (e: MouseEvent) => {
+  if (!isResizingMain.value) return
+  
+  const windowWidth = window.innerWidth
+  const newWidth = (e.clientX / windowWidth) * 100
+  
+  // 限制在30%-70%范围内（±20%）
+  const minWidth = 30
+  const maxWidth = 70
+  
+  if (newWidth >= minWidth && newWidth <= maxWidth) {
+    chatMainWidth.value = newWidth
+    console.log('调整聊天窗口宽度:', newWidth + '%')
+  }
+}
+
+const stopResizeMain = () => {
+  isResizingMain.value = false
+  document.removeEventListener('mousemove', handleResizeMain)
+  document.removeEventListener('mouseup', stopResizeMain)
+  document.body.style.cursor = 'auto'
+  document.body.style.userSelect = 'auto'
+}
+
+// 文件目录拖拽调整宽度的方法
+const startResizeDirectory = (e: MouseEvent) => {
+  e.preventDefault()
+  isResizingDirectory.value = true
+  document.addEventListener('mousemove', handleResizeDirectory)
+  document.addEventListener('mouseup', stopResizeDirectory)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+const handleResizeDirectory = (e: MouseEvent) => {
+  if (!isResizingDirectory.value) return
+  
+  const filePreviewElement = document.querySelector('.file-preview-overlay')
+  if (!filePreviewElement) return
+  
+  const rect = filePreviewElement.getBoundingClientRect()
+  const relativeX = e.clientX - rect.left
+  
+  // 在200px到300px范围内调整（约5%屏幕宽度范围）
+  const minWidth = 200
+  const maxWidthPx = 300
+  
+  if (relativeX >= minWidth && relativeX <= maxWidthPx) {
+    directoryWidth.value = relativeX
+    console.log('调整目录宽度:', relativeX + 'px')
+  }
+}
+
+const stopResizeDirectory = () => {
+  isResizingDirectory.value = false
+  document.removeEventListener('mousemove', handleResizeDirectory)
+  document.removeEventListener('mouseup', stopResizeDirectory)
+  document.body.style.cursor = 'auto'
+  document.body.style.userSelect = 'auto'
+}
+
 // 暴露给模板使用
 defineExpose({
   openFilePreview
@@ -821,6 +904,7 @@ const scrollToBottom = () => {
 <template>
   <div class="chat-container">
     <div class="chat-content">
+      <!-- 主聊天区域 -->
       <div 
         class="chat-layout" 
         :class="{ 'with-preview': showFilePreview }"
@@ -853,6 +937,7 @@ const scrollToBottom = () => {
             <MessageList 
               v-if="currentSessionId !== 0 && messages.length > 0"
               :messages="messages"
+              :has-file-preview="showFilePreview"
             />
             <WelcomeCard 
               v-else-if="showWelcomeCard"
@@ -879,15 +964,24 @@ const scrollToBottom = () => {
         </div>
       </div>
 
-      <!-- 文件预览面板 - 全屏覆盖 -->
+      <!-- 主窗口和文件预览之间的拖拽分割线 -->
+      <div 
+        v-if="showFilePreview" 
+        class="main-resize-handle"
+        @mousedown="startResizeMain"
+      />
+
+      <!-- 文件预览面板 -->
       <FilePreview
         v-if="showFilePreview"
         :uid="userId"
         :sid="currentSessionId"
         :visible="showFilePreview"
         :selected-file-id="previewFileId"
+        :directory-width="directoryWidth"
         @update:visible="showFilePreview = $event"
         @close="closeFilePreview"
+        @start-resize-directory="startResizeDirectory"
       />
     </div>
   </div>
@@ -907,16 +1001,18 @@ const scrollToBottom = () => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   display: flex;
-  flex-direction: column;
+  flex-direction: row; /* 改为横向布局 */
 }
 
 .chat-layout {
   display: flex;
   height: 100%;
-  width: 100%;
-  flex: 1;
+  flex: none; /* 改为固定宽度，不自动伸缩 */
   min-height: 0;
-  transition: all 0.3s ease;
+  transition: width 0.3s ease;
+  min-width: 300px; /* 设置最小宽度 */
+  max-width: none; /* 移除最大宽度限制 */
+  overflow: hidden; /* 防止内容溢出 */
 }
 
 .chat-main {
@@ -927,6 +1023,8 @@ const scrollToBottom = () => {
   min-width: 0; /* 防止内容溢出 */
   position: relative;
   transition: all 0.3s ease;
+  overflow: hidden; /* 防止内容溢出 */
+  background-color: #fafafa; /* 与消息列表保持一致的浅灰色背景 */
 }
 
 /* 响应式设计 */
@@ -941,10 +1039,13 @@ const scrollToBottom = () => {
 }
 
 .chat-main-header {
-  padding: 12px 20px; /* 减少垂直padding */
+  padding: 12px 20px;
   border-bottom: 1px solid #e0e0e0;
   background-color: #f8f9fa;
   flex-shrink: 0;
+  width: 100%; /* 确保标题栏占满宽度 */
+  box-sizing: border-box; /* 包含padding和border在宽度计算中 */
+  overflow: hidden; /* 防止内容溢出 */
 }
 
 .header-content {
@@ -963,6 +1064,10 @@ const scrollToBottom = () => {
   color: rgb(102, 8, 116);
   font-size: 1.2rem;
   font-weight: 500;
+  white-space: nowrap; /* 防止标题换行 */
+  overflow: hidden; /* 隐藏溢出的文本 */
+  text-overflow: ellipsis; /* 显示省略号 */
+  max-width: 100%; /* 确保不超出容器 */
 }
 
 .chat-main-content {
@@ -974,17 +1079,41 @@ const scrollToBottom = () => {
   position: relative;
   /* 确保内容区域填满可用空间 */
   height: 100%;
-  transition: all 0.3s ease;
+  width: 80%; /* 默认为屏幕80%宽度 */
+  margin: 0 auto; /* 居中显示 */
+  box-sizing: border-box; /* 包含padding和border在宽度计算中 */
 }
 
-/* 当有文件预览时，主内容区域也需要调整 */
+/* 当有文件预览时，主内容区域调整为100%宽度 */
 .chat-main.with-preview .chat-main-content {
-  max-width: 100%;
+  width: 100%;
+  margin: 0; /* 移除居中，占满可用空间 */
 }
 
 /* 确保欢迎卡片和消息列表完全填充容器 */
 .chat-main-content > * {
   flex: 1;
   height: 100%;
+}
+
+/* 主窗口和文件预览之间的拖拽分割线 */
+.main-resize-handle {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 1001;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+  border-left: 1px solid #e4e7ed;
+}
+
+.main-resize-handle:hover {
+  background-color: #409eff;
+  border-left: 1px solid #409eff;
+}
+
+.main-resize-handle:active {
+  background-color: #337ecc;
+  border-left: 1px solid #337ecc;
 }
 </style>

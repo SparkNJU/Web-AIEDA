@@ -325,7 +325,7 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
       { 'streaming-message': props.isStreaming, 'error-message': props.isError }
     ]"
     shadow="never"
-    body-style="padding:12px 16px; display: inline-block"
+    body-style="padding:12px 16px; display: block; max-width: 100%; word-wrap: break-word;"
     :style="{ minHeight: bubbleMinHeight }"
   >
     <!-- 用户消息 -->
@@ -366,6 +366,9 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   border: 1px solid rgba(102, 8, 116, 0.2);
   border-radius: 12px;
   transition: min-height 0.3s ease-out;
+  width: 100%;
+  word-wrap: break-word;
+  box-sizing: border-box;
 }
 
 .ai-message {
@@ -373,6 +376,9 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   border: 1px solid #e8e8e8;
   border-radius: 12px;
   transition: min-height 0.3s ease-out;
+  width: 100%;
+  word-wrap: break-word;
+  box-sizing: border-box;
 }
 
 .streaming-message {
@@ -424,13 +430,31 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 
 .main-content {
   line-height: 1.6;
+  max-width: 100%;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .streaming-content {
   white-space: pre-wrap;
   word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
   line-height: 1.6;
   font-family: inherit;
+  max-width: 100%;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* 确保md-content也受宽度限制 */
+.md-content {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .md-content :deep(pre) {
@@ -439,6 +463,10 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   border-radius: 8px;
   margin: 8px 0;
   border: 1px solid #e8e8e8;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
 }
 
 .md-content :deep(code) {
@@ -447,20 +475,47 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   background-color: #f0f0f0;
   padding: 2px 4px;
   border-radius: 3px;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 
 .md-content :deep(p) {
   margin: 8px 0;
   line-height: 1.6;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .md-content :deep(ul), .md-content :deep(ol) {
   padding-left: 20px;
   margin: 8px 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .md-content :deep(li) {
   margin: 4px 0;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+/* 确保所有块级元素都受宽度限制 */
+.md-content :deep(div),
+.md-content :deep(blockquote),
+.md-content :deep(table),
+.md-content :deep(h1),
+.md-content :deep(h2),
+.md-content :deep(h3),
+.md-content :deep(h4),
+.md-content :deep(h5),
+.md-content :deep(h6) {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-wrap: break-word;
+  word-break: break-word;
 }
 
 /* KaTeX数学公式样式优化 */

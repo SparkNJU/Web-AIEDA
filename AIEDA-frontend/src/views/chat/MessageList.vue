@@ -7,20 +7,24 @@ import type { ChatRecord } from './ChatPage.vue'
 // 接收消息列表
 const props = defineProps<{
   messages: ChatRecord[]
+  hasFilePreview?: boolean // 是否有文件预览面板展开
 }>()
 
 // 不要解构props，直接使用props.messages来保持响应式
 </script>
 
 <template>
-  <el-scrollbar class="chat-messages" ref="messagesContainer">
+  <el-scrollbar class="chat-messages" :class="{ 'with-file-preview': props.hasFilePreview }" ref="messagesContainer">
     <el-row 
       v-for="(msg, index) in props.messages" 
       :key="`row-${msg.rid || msg.sid || 'temp'}-${index}`"
-      :justify="msg.direction ? 'end' : 'start'"
       class="message-row"
+      :justify="msg.direction ? 'end' : 'start'"
     >
-      <el-col>
+      <el-col 
+        :span="msg.direction ? 15 : 24"
+        class="message-col"
+      >
         <MessageBubble 
           :key="`msg-${msg.rid || msg.sid || 'temp'}-${index}-${msg.content?.length || 0}`"
           :content="msg.content"
@@ -37,15 +41,18 @@ const props = defineProps<{
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px; /* 减少padding */
+  padding: 12px 16px;
   background-color: #fafafa;
   min-height: 0; /* 允许收缩 */
   height: 100%; /* 确保填满父容器 */
+  width: 100%; /* 确保占满宽度 */
   box-sizing: border-box;
 }
 
 .message-row { 
-  margin: 8px 0; /* 减少消息间距 */
+  margin: 8px 0;
+  max-width: 100%; /* 确保行不会超出容器 */
+  box-sizing: border-box;
 }
 
 .message-row:first-child {
@@ -56,13 +63,61 @@ const props = defineProps<{
   margin-bottom: 0;
 }
 
+/* 消息列样式 */
+.message-col {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* 用户消息：60%宽度，通过justify-end自然右对齐 */
+.message-row[justify="end"] .message-col {
+  width: 60%; /* 用户消息宽度 */
+}
+
+/* AI消息：100%宽度，左对齐 */
+.message-row[justify="start"] .message-col {
+  width: 100%; /* AI消息占满容器宽度 */
+}
+
+/* 当有文件预览面板时，调整消息宽度 */
+.chat-messages.with-file-preview .message-row[justify="end"] .message-col {
+  width: 80%; /* 文件预览时用户消息占80% */
+}
+
+.chat-messages.with-file-preview .message-row[justify="start"] .message-col {
+  width: 100%; /* AI消息始终占满可用宽度 */
+}
+
+/* 确保列不会超出容器 */
+.message-row .el-col {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 /* 确保滚动条样式 */
 .chat-messages :deep(.el-scrollbar__wrap) {
   overflow-x: hidden;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .chat-messages :deep(.el-scrollbar__view) {
   height: 100%;
+  width: 100%;
   min-height: fit-content;
+  box-sizing: border-box;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  /* 移动端用户消息占更多空间 */
+  .message-row[justify="end"] .message-col {
+    width: 85% !important; /* 用户消息在移动端占85% */
+  }
+  
+  /* 移动端AI消息占更多空间 */
+  .message-row[justify="center"] .message-col {
+    width: 95% !important; /* AI消息在移动端占95% */
+  }
 }
 </style>

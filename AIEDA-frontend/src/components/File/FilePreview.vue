@@ -3,7 +3,11 @@
     <!-- 侧边面板模式 -->
     <div class="side-panel-container">
       <!-- 左侧文件目录 -->
-      <div class="directory-panel" :class="{ 'collapsed': directoryCollapsed }">
+      <div 
+        class="directory-panel" 
+        :class="{ 'collapsed': directoryCollapsed }"
+        :style="{ width: directoryCollapsed ? '50px' : `${props.directoryWidth || 250}px` }"
+      >
         <div class="directory-header" :class="{ 'collapsed': directoryCollapsed }">
           <div class="header-title" v-if="!directoryCollapsed">
             <el-icon class="title-icon"><FolderOpened /></el-icon>
@@ -68,6 +72,13 @@
         </div>
       </div>
       
+      <!-- 文件目录和预览之间的拖拽分割线 -->
+      <div 
+        v-if="!directoryCollapsed" 
+        class="directory-resize-handle"
+        @mousedown="(e) => emit('start-resize-directory', e)"
+      />
+      
       <!-- 右侧文件预览 -->
       <div class="explorer-panel">
         <div class="explorer-header">
@@ -92,9 +103,9 @@
               @click="downloadFile(selectedFile)"
               :loading="isDownloading"
               size="small"
-            >
-              下载
-            </el-button>
+              circle
+              title="下载文件"
+            />
             <el-button 
               type="default" 
               :icon="Close" 
@@ -191,12 +202,14 @@ const props = defineProps<{
   sid: number
   visible: boolean
   selectedFileId?: string
+  directoryWidth?: number
 }>()
 
 // 组件事件
 const emit = defineEmits<{
   'update:visible': [value: boolean]
   'close': []
+  'start-resize-directory': [event: MouseEvent]
 }>()
 
 // 响应式数据
@@ -411,15 +424,11 @@ watch(() => props.visible, async (visible) => {
 
 <style scoped>
 .file-preview-overlay {
-  position: fixed;
-  top: 0;
-  left: 50%;
-  right: 0%;
-  bottom: 0;
-  z-index: 1000;
+  flex: 1;
   background-color: white;
   border-left: 1px solid #e4e7ed;
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+  min-width: 300px; /* 设置最小宽度 */
 }
 
 .side-panel-container {
@@ -430,16 +439,16 @@ watch(() => props.visible, async (visible) => {
 }
 
 .directory-panel {
-  width: 250px;
   background-color: #fafafa;
   border-right: 1px solid #e4e7ed;
   display: flex;
   flex-direction: column;
   transition: width 0.3s ease;
+  flex-shrink: 0; /* 防止收缩 */
 }
 
 .directory-panel.collapsed {
-  width: 50px;
+  width: 50px !important; /* 收起时固定宽度 */
 }
 
 .directory-header {
@@ -668,16 +677,26 @@ watch(() => props.visible, async (visible) => {
 .explorer-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start; /* 改为顶部对齐，支持换行 */
   padding: 16px;
   border-bottom: 1px solid #e4e7ed;
   background-color: white;
+  gap: 12px; /* 添加间距 */
+  flex-wrap: wrap; /* 允许换行 */
 }
 
 .header-left {
   display: flex;
-  align-items: center;
+  align-items: flex-start; /* 改为顶部对齐 */
   gap: 12px;
+  flex: 1; /* 占据剩余空间 */
+  min-width: 0; /* 允许收缩 */
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0; /* 允许收缩 */
+  word-wrap: break-word; /* 支持换行 */
 }
 
 .file-name {
@@ -685,6 +704,16 @@ watch(() => props.visible, async (visible) => {
   font-weight: 600;
   color: #303133;
   margin: 0 0 4px 0;
+  word-wrap: break-word; /* 长文件名换行 */
+  word-break: break-all; /* 强制换行 */
+  line-height: 1.4; /* 适当的行高 */
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0; /* 防止按钮被压缩 */
+  align-items: flex-start; /* 顶部对齐 */
 }
 
 .file-meta {
@@ -833,5 +862,86 @@ watch(() => props.visible, async (visible) => {
 .preview-content::-webkit-scrollbar-thumb:hover,
 .text-content::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+/* 响应式设计 - 中等屏幕适配 */
+@media (max-width: 1024px) {
+  .file-name {
+    font-size: 15px;
+    max-width: calc(100% - 20px); /* 确保不会与按钮重叠 */
+  }
+
+  .explorer-header {
+    padding: 14px; /* 稍微减少内边距 */
+  }
+}
+
+/* 响应式设计 - 小屏幕适配 */
+@media (max-width: 768px) {
+  .explorer-header {
+    flex-direction: column; /* 小屏幕下垂直排列 */
+    align-items: stretch; /* 填满宽度 */
+    gap: 8px;
+  }
+
+  .header-left {
+    flex-direction: row; /* 保持水平排列 */
+    align-items: flex-start;
+  }
+
+  .header-actions {
+    align-self: flex-end; /* 右对齐 */
+    margin-top: 8px;
+  }
+
+  .file-name {
+    font-size: 14px; /* 小屏幕下减小字号 */
+    line-height: 1.3;
+    max-width: 100%; /* 小屏幕下允许占满宽度 */
+  }
+}
+
+/* 超小屏幕适配 */
+@media (max-width: 480px) {
+  .explorer-header {
+    padding: 12px; /* 减少内边距 */
+  }
+
+  .header-left {
+    gap: 8px; /* 减少间距 */
+  }
+
+  .file-name {
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .header-actions {
+    gap: 6px; /* 按钮间距更紧凑 */
+  }
+
+  .header-actions .el-button {
+    padding: 4px; /* 减小按钮大小 */
+  }
+}
+
+/* 文件目录和预览之间的拖拽分割线 */
+.directory-resize-handle {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.directory-resize-handle:hover {
+  background-color: #409eff;
+  background: linear-gradient(to right, transparent, #409eff, transparent);
+}
+
+.directory-resize-handle:active {
+  background-color: #337ecc;
+  background: linear-gradient(to right, transparent, #337ecc, transparent);
 }
 </style>
