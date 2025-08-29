@@ -31,6 +31,16 @@ public interface FileService {
     FileListResponseVO getUserFiles(String uid, String sid);
     
     /**
+     * 获取用户未关联记录的文件列表
+     */
+    FileListResponseVO getUnlinkedFiles(String uid, String sid);
+    
+    /**
+     * 根据记录ID获取关联的文件列表
+     */
+    FileListResponseVO getFilesByRecordId(Integer rid);
+    
+    /**
      * 根据文件ID获取文件信息
      */
     FileVO getFileInfo(String fid);

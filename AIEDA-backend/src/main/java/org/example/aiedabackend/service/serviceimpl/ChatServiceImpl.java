@@ -438,9 +438,6 @@ public class ChatServiceImpl implements ChatService {
         String agentType = getStringFromMetadata(metadata, "agent_type", "orchestrator");
         String inputType = getStringFromMetadata(metadata, "input_type", "question");
         
-        // 🔗 获取或创建会话级SSE连接
-        SseEmitter emitter = getOrCreateSessionSSE(uid, sid);
-
         // 更新会话时间，确保最新发送消息的会话显示在最上面
         updateSessionTime(uid, sid);
 
@@ -449,7 +446,22 @@ public class ChatServiceImpl implements ChatService {
         int nextSeq = existing.isEmpty() ? 1 : existing.size() + 1;
         LocalDateTime now = LocalDateTime.now();
         Record userRecord = new Record(sid, uid, true, content, nextSeq, MessageTypeConstant.USER, now);
-        recordRepository.save(userRecord);
+        Record savedRecord = recordRepository.save(userRecord);
+        
+        // 🔗 在获取SSE连接之前，先关联文件与当前记录
+        if (fileReferences != null && !fileReferences.isEmpty()) {
+            try {
+                fileRepository.updateRidByFileIds(fileReferences, savedRecord.getRid());
+                log.info("[{}] ✅ 成功关联 {} 个文件到记录 {} - fileIds: {}", 
+                        getCurrentTimestamp(), fileReferences.size(), savedRecord.getRid(), fileReferences);
+            } catch (Exception e) {
+                log.error("[{}] ❌ 关联文件到记录失败 - recordId: {}, fileIds: {}, error: {}", 
+                        getCurrentTimestamp(), savedRecord.getRid(), fileReferences, e.getMessage());
+            }
+        }
+        
+        // 🔗 获取或创建会话级SSE连接
+        SseEmitter emitter = getOrCreateSessionSSE(uid, sid);
 
         // 异步处理AI流式响应，使用会话级SSE连接，传递文件引用和metadata
         final SseEmitter finalEmitter = emitter;

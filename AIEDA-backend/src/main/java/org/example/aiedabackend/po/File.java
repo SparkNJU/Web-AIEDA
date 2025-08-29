@@ -25,6 +25,9 @@ public class File {
     @Column(nullable = false)
     private Integer sid;
 
+    @Column(name = "rid")
+    private Integer rid; // 关联的记录ID，为空表示文件刚上传未与消息关联
+
     @Column(name = "original_name", nullable = false, length = 255)
     private String originalName;
 
@@ -49,6 +52,22 @@ public class File {
         this.fileId = fileId;
         this.uid = uid;
         this.sid = sid;
+        this.rid = null; // 初始时为空，表示刚上传未关联消息
+        this.originalName = originalName;
+        this.savedName = savedName;
+        this.filePath = filePath;
+        this.fileSize = fileSize;
+        this.fileType = fileType;
+        this.uploadTime = uploadTime;
+    }
+
+    public File(String fileId, Integer uid, Integer sid, Integer rid, String originalName, 
+                String savedName, String filePath, Long fileSize, String fileType, 
+                LocalDateTime uploadTime) {
+        this.fileId = fileId;
+        this.uid = uid;
+        this.sid = sid;
+        this.rid = rid;
         this.originalName = originalName;
         this.savedName = savedName;
         this.filePath = filePath;
@@ -68,6 +87,7 @@ public class File {
         fileVO.setUploadTime(this.uploadTime);
         fileVO.setUserId(this.uid.toString());
         fileVO.setSessionId(this.sid.toString());
+        fileVO.setRid(this.rid); // 添加rid字段
         fileVO.setDownloadUrl("/api/files/download/" + this.fileId);
         return fileVO;
     }

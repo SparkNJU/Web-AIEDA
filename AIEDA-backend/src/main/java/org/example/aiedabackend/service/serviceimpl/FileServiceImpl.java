@@ -229,6 +229,46 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
+    public FileListResponseVO getUnlinkedFiles(String uid, String sid) {
+        List<File> files;
+        
+        try {
+            Integer uidInt = Integer.parseInt(uid);
+            Integer sidInt = Integer.parseInt(sid);
+            
+            files = fileRepository.findByUidAndSidAndRidIsNull(uidInt, sidInt);
+            
+        } catch (NumberFormatException e) {
+            throw new RuntimeException("用户ID或会话ID格式错误");
+        }
+        
+        List<FileVO> fileVOs = files.stream()
+                .map(File::toVO)
+                .collect(Collectors.toList());
+        
+        FileListResponseVO response = new FileListResponseVO();
+        response.setFiles(fileVOs);
+        response.setTotalCount(fileVOs.size());
+        
+        return response;
+    }
+
+    @Override
+    public FileListResponseVO getFilesByRecordId(Integer rid) {
+        List<File> files = fileRepository.findByRid(rid);
+        
+        List<FileVO> fileVOs = files.stream()
+                .map(File::toVO)
+                .collect(Collectors.toList());
+        
+        FileListResponseVO response = new FileListResponseVO();
+        response.setFiles(fileVOs);
+        response.setTotalCount(fileVOs.size());
+        
+        return response;
+    }
+
+    @Override
     public FileVO getFileInfo(String fid) {
         // 首先尝试从数据库查找（主要用于uploads文件夹的文件）
         File file = fileRepository.findByFileId(fid);

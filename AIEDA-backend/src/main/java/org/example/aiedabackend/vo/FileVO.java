@@ -20,4 +20,5 @@ public class FileVO {
     private String downloadUrl;
     private String userId;
     private String sessionId;
+    private Integer rid; // 关联的记录ID，为空表示文件未与消息关联
 }

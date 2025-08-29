@@ -185,6 +185,50 @@ public class FileController {
         }
     }
 
+    @Operation(summary = "未关联文件列表查询", description = "获取用户在指定会话中未关联记录的文件列表")
+    @GetMapping("/list/unlinked")
+    public Response<FileListResponseVO> getUnlinkedFiles(
+            @Parameter(description = "用户ID", required = true)
+            @RequestParam("uid") String uid,
+            @Parameter(description = "会话ID", required = true)
+            @RequestParam("sid") String sid) {
+        
+        try {
+            if (uid == null || uid.trim().isEmpty()) {
+                return Response.buildFailure("需要提供uid参数", "400");
+            }
+            
+            if (sid == null || sid.trim().isEmpty()) {
+                return Response.buildFailure("需要提供sid参数", "400");
+            }
+            
+            FileListResponseVO responseVO = fileService.getUnlinkedFiles(uid, sid);
+            return Response.buildSuccess(responseVO);
+            
+        } catch (Exception e) {
+            return Response.buildFailure("获取未关联文件列表失败: " + e.getMessage(), "500");
+        }
+    }
+
+    @Operation(summary = "根据记录ID获取关联文件", description = "获取指定记录ID关联的文件列表")
+    @GetMapping("/list/by-record/{rid}")
+    public Response<FileListResponseVO> getFilesByRecordId(
+            @Parameter(description = "记录ID", required = true)
+            @PathVariable("rid") Integer rid) {
+        
+        try {
+            if (rid == null) {
+                return Response.buildFailure("需要提供rid参数", "400");
+            }
+            
+            FileListResponseVO responseVO = fileService.getFilesByRecordId(rid);
+            return Response.buildSuccess(responseVO);
+            
+        } catch (Exception e) {
+            return Response.buildFailure("获取记录关联文件失败: " + e.getMessage(), "500");
+        }
+    }
+
     @Operation(summary = "删除文件", description = "删除指定文件")
     @DeleteMapping("/{fid}")
     public Response<Boolean> deleteFile(
