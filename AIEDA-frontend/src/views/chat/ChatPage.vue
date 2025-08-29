@@ -33,6 +33,7 @@ export type ChatRecord = {
   isError?: boolean // 是否为错误消息
   agentType?: string // Agent类型
   inputType?: string // 输入类型，config类型的消息不显示
+  attachedFiles?: FileVO[] // 新增：附件文件列表（用于刚发送的消息）
 }
 
 // 核心数据
@@ -351,19 +352,12 @@ const handleSendMessage = async (messageToSend: string, agentType: AgentType, in
   } else {
     // question类型使用流式接口
     
-    // 添加用户消息到界面
-    let displayMessage = messageToSend
-    if (files && files.length > 0) {
-      displayMessage += `\n\n📎 附件 (${files.length} 个文件):`
-      files.forEach(file => {
-        displayMessage += `\n• ${file.originalName}`
-      })
-    }
-    
+    // 立即添加用户消息到界面，包含文件信息
     sessionState.messages.push({
-      content: displayMessage,
+      content: messageToSend,
       direction: true,
-      sid: sessionId
+      sid: sessionId,
+      attachedFiles: files && files.length > 0 ? [...files] : undefined // 复制文件数组，避免引用问题
     })
     sessionState.inputMessage = ''
     scrollToBottom()
@@ -938,6 +932,7 @@ const scrollToBottom = () => {
               v-if="currentSessionId !== 0 && messages.length > 0"
               :messages="messages"
               :has-file-preview="showFilePreview"
+              @open-file-preview="openFilePreview"
             />
             <WelcomeCard 
               v-else-if="showWelcomeCard"

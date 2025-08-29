@@ -15,6 +15,7 @@ export interface FileVO {
   downloadUrl: string
   userId: string
   sessionId: string
+  rid?: number // 关联的记录ID，为空表示文件未与消息关联
 }
 
 export interface FileUploadRequestVO {
@@ -156,6 +157,16 @@ export const getPreviewUrl = (fid: string) => {
 // 获取文件列表
 export const getFileList = (params: FileListRequestVO) => {
   return axios.get(`${FILE_MODULE}/list`, { params })
+}
+
+// 获取未关联记录的文件列表（用于文件上传区显示）
+export const getUnlinkedFileList = (params: FileListRequestVO) => {
+  return axios.get(`${FILE_MODULE}/list/unlinked`, { params })
+}
+
+// 根据记录ID获取关联的文件列表（用于历史消息显示）
+export const getFilesByRecordId = (rid: number) => {
+  return axios.get(`${FILE_MODULE}/list/by-record/${rid}`)
 }
 
 // 获取文件结构（从大模型服务）

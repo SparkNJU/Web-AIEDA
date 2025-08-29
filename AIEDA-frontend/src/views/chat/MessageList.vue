@@ -3,12 +3,24 @@
 import { ElScrollbar, ElRow, ElCol } from 'element-plus'
 import MessageBubble from './MessageBubble.vue'
 import type { ChatRecord } from './ChatPage.vue'
+import type { FileVO } from '../../api/file'
 
 // 接收消息列表
 const props = defineProps<{
   messages: ChatRecord[]
   hasFilePreview?: boolean // 是否有文件预览面板展开
 }>()
+
+// 定义事件
+const emit = defineEmits<{
+  'open-file-preview': [file: FileVO] // 文件预览事件
+}>()
+
+// 处理文件预览事件
+const handleFilePreview = (file: FileVO) => {
+  console.log('MessageList: 转发文件预览事件', file.originalName)
+  emit('open-file-preview', file)
+}
 
 // 不要解构props，直接使用props.messages来保持响应式
 </script>
@@ -31,6 +43,9 @@ const props = defineProps<{
           :is-user="msg.direction"
           :is-streaming="msg.isStreaming"
           :is-error="msg.isError"
+          :record-id="msg.rid"
+          :attached-files="msg.attachedFiles"
+          @open-file-preview="handleFilePreview"
         />
       </el-col>
     </el-row>

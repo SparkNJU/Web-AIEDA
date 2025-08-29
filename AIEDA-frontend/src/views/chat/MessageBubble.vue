@@ -4,8 +4,11 @@ import { ElCard } from 'element-plus'
 import MarkdownIt from 'markdown-it'
 import texmath from 'markdown-it-texmath'
 import katex from 'katex'
-import { watch, computed, ref, nextTick } from 'vue'
+import { watch, computed, ref, nextTick, onMounted } from 'vue'
 import 'katex/dist/katex.min.css'
+import type { FileVO } from '../../api/file'
+import { getFilesByRecordId, downloadFile } from '../../api/file'
+import MessageFileList from '../../components/File/MessageFileList.vue'
 
 // 接收单个消息参数
 const props = defineProps<{
@@ -13,10 +16,80 @@ const props = defineProps<{
   isUser: boolean // true=用户消息，false=AI消息
   isStreaming?: boolean // 是否正在流式输出
   isError?: boolean // 是否为错误消息
+  recordId?: number // 消息记录ID，用于获取关联的文件
+  attachedFiles?: FileVO[] // 新增：直接传入的附件文件列表（用于刚发送的消息）
+}>()
+
+// 定义事件
+const emit = defineEmits<{
+  'open-file-preview': [file: FileVO] // 文件预览事件
 }>()
 
 // 响应式变量来控制气泡的最小高度
 const bubbleMinHeight = ref('auto')
+const associatedFiles = ref<FileVO[]>([]) // 关联的文件列表
+
+// 计算最终要显示的文件列表
+const displayFiles = computed(() => {
+  // 如果有直接传入的附件文件，优先使用（用于刚发送的消息）
+  if (props.attachedFiles && props.attachedFiles.length > 0) {
+    return props.attachedFiles
+  }
+  // 否则使用从后端加载的关联文件
+  return associatedFiles.value
+})
+
+// 在组件挂载时加载关联的文件
+onMounted(() => {
+  if (props.recordId && props.isUser && !props.attachedFiles) {
+    loadAssociatedFiles()
+  }
+})
+
+// 监听recordId变化，重新加载文件
+watch(() => props.recordId, (newRecordId) => {
+  if (newRecordId && props.isUser && !props.attachedFiles) {
+    loadAssociatedFiles()
+  } else if (!props.attachedFiles) {
+    associatedFiles.value = []
+  }
+})
+
+// 加载关联的文件列表
+const loadAssociatedFiles = async () => {
+  if (!props.recordId) return
+  
+  try {
+    console.log('加载消息关联文件:', { recordId: props.recordId })
+    const response = await getFilesByRecordId(props.recordId)
+    
+    if (response.data && response.data.code === '200') {
+      associatedFiles.value = response.data.data.files || []
+      console.log('关联文件加载成功:', associatedFiles.value)
+    } else {
+      associatedFiles.value = []
+    }
+  } catch (error) {
+    console.error('加载关联文件失败:', error)
+    associatedFiles.value = []
+  }
+}
+
+// 处理文件预览点击
+const handleFilePreview = (file: FileVO) => {
+  console.log('预览关联文件:', file.originalName)
+  emit('open-file-preview', file)
+}
+
+// 处理文件下载
+const handleFileDownload = async (file: FileVO) => {
+  try {
+    await downloadFile(file.fileId, file.originalName)
+    console.log('文件下载成功:', file.originalName)
+  } catch (error) {
+    console.error('文件下载失败:', error)
+  }
+}
 
 const md = new MarkdownIt({
   html: true,
@@ -211,7 +284,6 @@ const processContent = (text: string) => {
   
   if (tagMatches && tagMatches.length > 3) {
     let tagIndex = 0
-    const originalProcessed = processed
     processed = processed.replace(
       /<span[^>]*class="tag-container"[^>]*>[\s\S]*?<\/span>/g,
       (tagMatch) => {
@@ -373,7 +445,16 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   >
     <!-- 用户消息 -->
     <template v-if="props.isUser">
-      {{ props.content }}
+      <!-- 使用新的文件列表组件 -->
+      <MessageFileList 
+        :files="displayFiles"
+        @preview-file="handleFilePreview"
+        @download-file="handleFileDownload"
+      />
+      <!-- 用户消息内容 -->
+      <div class="user-message-content">
+        {{ props.content }}
+      </div>
     </template>
 
     <!-- AI消息 -->
@@ -412,6 +493,11 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   width: 100%;
   word-wrap: break-word;
   box-sizing: border-box;
+}
+
+/* 用户消息内容 */
+.user-message-content {
+  margin-top: 0;
 }
 
 .ai-message {

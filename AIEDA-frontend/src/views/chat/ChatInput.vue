@@ -7,7 +7,7 @@ import LLMConfig from '../../components/LLM/LLMConfig.vue'
 import LLMIntervention from '../../components/LLM/LLMIntervention.vue'
 import type { InterventionState } from '../../components/LLM/LLMIntervention.vue'
 import type { FileVO } from '../../api/file'
-import { formatFileSize, downloadFile as apiDownloadFile, getFileList, deleteFile as apiDeleteFile } from '../../api/file'
+import { formatFileSize, downloadFile as apiDownloadFile, getUnlinkedFileList, deleteFile as apiDeleteFile } from '../../api/file'
 
 // Agent类型定义
 export type AgentType = 'orchestrator' | 'dynamic'
@@ -49,9 +49,6 @@ const llmInterventionRef = ref<InstanceType<typeof LLMIntervention>>()
 
 // LLM配置相关
 const showLLMConfig = ref(false)
-
-// 调试用的状态跟踪
-const lastDebugKey = ref('')
 
 // 定义LLM配置数据类型
 interface LLMConfigData {
@@ -102,109 +99,10 @@ watch(() => props.isStreaming, (newStreaming, oldStreaming) => {
   }
 })
 
-// 监听输入消息变化，如果在流式输出或暂停时有输入，状态变为instruct
-watch(() => props.inputMessage, (newMessage, oldMessage) => {
-  const hasInput = newMessage.trim().length > 0
-  const wasEmpty = oldMessage?.trim().length === 0
-  
-  if ((interventionState.value === 'streaming' || interventionState.value === 'paused')) {
-    const currentButtonState = getButtonState()
-    console.log('输入消息变化:', { 
-      currentState: interventionState.value,
-      hasInput,
-      wasEmpty: wasEmpty ?? true,
-      buttonState: currentButtonState,
-      messageLength: newMessage.length
-    })
-  }
-})
-
 // 计算是否有输入内容
 const hasInputContent = computed(() => {
   return props.inputMessage.trim().length > 0
 })
-
-// 获取按钮状态
-const getButtonState = () => {
-  const state = interventionState.value
-  const hasInput = hasInputContent.value
-  
-  let buttonState: string
-  
-  if (state === 'streaming') {
-    buttonState = hasInput ? 'instruct' : 'pause'
-  } else if (state === 'paused') {
-    buttonState = 'instruct'
-  } else {
-    buttonState = 'send'
-  }
-  
-  // 添加调试日志（只在状态变化时输出，避免过多日志）
-  const debugKey = `${state}-${hasInput}`
-  if (lastDebugKey.value !== debugKey) {
-    console.log('按钮状态计算:', { 
-      interventionState: state, 
-      hasInputContent: hasInput, 
-      buttonState,
-      inputMessage: props.inputMessage.slice(0, 20) + (props.inputMessage.length > 20 ? '...' : '')
-    })
-    lastDebugKey.value = debugKey
-  }
-  
-  return buttonState
-}
-
-// 获取按钮样式
-const getButtonStyle = () => {
-  const buttonState = getButtonState()
-  
-  switch (buttonState) {
-    case 'pause':
-      return {
-        backgroundColor: '#ef4444',
-        borderColor: '#ef4444'
-      }
-    case 'instruct':
-      return {
-        backgroundColor: '#ffffff',
-        borderColor: '#d1d5db',
-        color: '#374151'
-      }
-    default: // send
-      return {
-        backgroundColor: '#22c55e',
-        borderColor: '#22c55e'
-      }
-  }
-}
-
-// 获取按钮图标
-const getButtonIcon = () => {
-  const buttonState = getButtonState()
-  
-  switch (buttonState) {
-    case 'pause':
-      return VideoPause // 暂停图标
-    case 'instruct':
-      return CaretTop // 向上箭头  
-    default: // send
-      return Promotion // 向右三角形（发送）
-  }
-}
-
-// 获取按钮文本 (用于title提示)
-const getButtonText = () => {
-  const buttonState = getButtonState()
-  
-  switch (buttonState) {
-    case 'pause':
-      return '暂停'
-    case 'instruct':
-      return 'Instruct'
-    default:
-      return props.isStreaming ? '生成中...' : '发送'
-  }
-}
 
 // 加载当前会话的文件列表
 const loadSessionFiles = async () => {
@@ -214,18 +112,18 @@ const loadSessionFiles = async () => {
   }
   
   try {
-    console.log('加载会话文件列表:', { uid: props.uid, sid: props.sid })
-    const response = await getFileList({ uid: props.uid, sid: props.sid })
+    console.log('加载会话未关联文件列表:', { uid: props.uid, sid: props.sid })
+    const response = await getUnlinkedFileList({ uid: props.uid, sid: props.sid })
     
     if (response.data && response.data.code === '200') {
       uploadedFiles.value = response.data.data.files || []
-      console.log('文件列表加载成功:', uploadedFiles.value)
+      console.log('未关联文件列表加载成功:', uploadedFiles.value)
     } else {
-      console.log('文件列表为空或加载失败')
+      console.log('未关联文件列表为空或加载失败')
       uploadedFiles.value = []
     }
   } catch (error) {
-    console.error('加载文件列表失败:', error)
+    console.error('加载未关联文件列表失败:', error)
     uploadedFiles.value = []
   }
 }
@@ -240,7 +138,8 @@ const handleKeyup = (e: KeyboardEvent) => {
 
 // 发送消息（点击按钮）
 const sendMessage = async () => {
-  const buttonState = getButtonState()
+  // 使用 LLMIntervention 组件的按钮状态判断
+  const buttonState = llmInterventionRef.value?.getButtonState() || 'send'
   
   // 根据按钮状态执行不同的操作
   if (buttonState === 'pause') {
@@ -278,13 +177,18 @@ const sendMessage = async () => {
     }
     
     // 发送用户的实际问题（总是使用 question 类型）
-    emit('send-message', userMessage, selectedAgentType.value, 'question' as InputType, uploadedFiles.value.length > 0 ? uploadedFiles.value : undefined)
+    const filesToSend = uploadedFiles.value.length > 0 ? [...uploadedFiles.value] : undefined
+    emit('send-message', userMessage, selectedAgentType.value, 'question' as InputType, filesToSend)
+    
+    // 发送消息后立即清空文件列表
+    if (uploadedFiles.value.length > 0) {
+      console.log('消息已发送，清空文件列表')
+      uploadedFiles.value = []
+    }
     
     // 发送消息后，主动设置状态为streaming
     interventionState.value = 'streaming'
     console.log('消息已发送，状态设置为streaming')
-    
-    // 注意：不再清空文件列表，交由用户手动管理
   }
 }
 
@@ -554,16 +458,16 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
       <el-button 
         type="primary" 
         @click="sendMessage" 
-        :loading="isLoading && getButtonState() === 'send'"
-        :disabled="getButtonState() === 'send' && (inputDisabled || !inputMessage.trim())"
+        :loading="isLoading && llmInterventionRef?.getButtonState() === 'send'"
+        :disabled="llmInterventionRef?.getButtonState() === 'send' && (inputDisabled || !inputMessage.trim())"
         class="send-button"
-        :style="getButtonStyle()"
-        :title="getButtonText()"
+        :style="llmInterventionRef?.getButtonStyle() || { backgroundColor: '#22c55e', borderColor: '#22c55e' }"
+        :title="llmInterventionRef?.getButtonText() || '发送'"
         circle
       >
         <!-- 使用Element Plus图标 -->
         <el-icon :size="16">
-          <component :is="getButtonIcon()" />
+          <component :is="llmInterventionRef?.getButtonIcon() === 'pause' ? VideoPause : llmInterventionRef?.getButtonIcon() === 'arrow-up' ? CaretTop : Promotion" />
         </el-icon>
       </el-button>
     </div>
