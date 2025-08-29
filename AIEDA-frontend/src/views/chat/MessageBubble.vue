@@ -195,6 +195,50 @@ const processContent = (text: string) => {
   // 移除answer标签但保留内容
   processed = processed.replace(/<answer>([\s\S]*?)<\/answer>/g, '$1')
   
+  // 后处理：在连续的标签容器间添加换行控制
+  // 修复的方法：使用更宽松的正则表达式来匹配包含换行符的标签
+  const tagMatches = processed.match(/<span[^>]*class="tag-container"[^>]*>[\s\S]*?<\/span>/g)
+  console.log('标签换行处理调试信息:', {
+    tagMatches: tagMatches?.map((match, index) => ({
+      index,
+      preview: match.substring(0, 100).replace(/\s+/g, ' ') + '...',
+      length: match.length
+    })),
+    tagCount: tagMatches ? tagMatches.length : 0,
+    shouldAddLineBreaks: tagMatches && tagMatches.length > 3,
+    timestamp: new Date().toLocaleTimeString()
+  })
+  
+  if (tagMatches && tagMatches.length > 3) {
+    let tagIndex = 0
+    const originalProcessed = processed
+    processed = processed.replace(
+      /<span[^>]*class="tag-container"[^>]*>[\s\S]*?<\/span>/g,
+      (tagMatch) => {
+        tagIndex++
+        const shouldAddBreak = tagIndex > 3 && (tagIndex - 1) % 3 === 0
+        // console.log(`处理第${tagIndex}个标签:`, {
+        //   shouldAddBreak,
+        //   tagIndex,
+        //   calculation: (tagIndex - 1) % 3,
+        //   tagPreview: tagMatch.substring(0, 80).replace(/\s+/g, ' ') + '...'
+        // })
+        // 在第4、7、10...个标签前添加换行
+        if (shouldAddBreak) {
+          return `<br/>${tagMatch}`
+        }
+        return tagMatch
+      }
+    )
+    
+    // console.log('换行处理完成:', {
+    //   originalLength: originalProcessed.length,
+    //   newLength: processed.length,
+    //   addedBreaks: processed.split('<br/>').length - 1,
+    //   hasChanges: originalProcessed !== processed
+    // })
+  }
+  
   console.log('内容处理完成:', {
     originalLength: text.length,
     processedLength: processed.length,
@@ -260,8 +304,7 @@ const handleTagClick = async (event: Event) => {
         wasHidden: isCurrentlyHidden,
         newDisplay: expandedContent.style.display,
         timestamp: new Date().toLocaleTimeString()
-      })
-      
+      })  
       // 如果是展开操作，检查是否需要扩展气泡高度
       if (isCurrentlyHidden) {
         await nextTick() // 等待DOM更新
@@ -341,10 +384,10 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
         :data-streaming="props.isStreaming"
         @click="handleTagClick"
       >
-        <!-- 对于正在流式输出的内容，也需要渲染HTML标签 -->
+        <!-- 对于正在流式输出的内容，也进行markdown渲染 -->
         <template v-if="props.isStreaming">
-          <!-- 流式输出时也渲染HTML，但不进行markdown处理以提升性能 -->
-          <div class="streaming-content" v-html="processedContent.processedText"></div>
+          <!-- 流式输出时也进行完整的markdown渲染 -->
+          <div class="md-content streaming-content" v-html="md.render(processedContent.processedText)" />
         </template>
         <template v-else>
           <!-- 流式完成后渲染markdown格式 -->
@@ -438,17 +481,7 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   width: 100%;
 }
 
-.streaming-content {
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  line-height: 1.6;
-  font-family: inherit;
-  max-width: 100%;
-  box-sizing: border-box;
-  width: 100%;
-}
+/* 流式输出内容现在使用 md-content 类，无需额外样式 */
 
 /* 确保md-content也受宽度限制 */
 .md-content {
@@ -664,7 +697,7 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 :deep(.tag-container) {
   position: relative;
   display: inline-block;
-  margin: 0 1px; /* 调整这个值可以控制标签间距：0px = 最紧凑，2px = 稍宽松 */
+  margin: 0 2px 2px 0; /* 右边距和下边距，为换行留出空间 */
   vertical-align: baseline;
   height: auto;
   min-height: 0;
