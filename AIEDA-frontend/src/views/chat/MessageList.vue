@@ -9,17 +9,26 @@ import type { FileVO } from '../../api/file'
 const props = defineProps<{
   messages: ChatRecord[]
   hasFilePreview?: boolean // 是否有文件预览面板展开
+  uid?: number // 用户ID
+  sid?: number // 会话ID
 }>()
 
 // 定义事件
 const emit = defineEmits<{
   'open-file-preview': [file: FileVO] // 文件预览事件
+  'send-confirmation': [choice: '1' | '2'] // 用户确认事件
 }>()
 
 // 处理文件预览事件
 const handleFilePreview = (file: FileVO) => {
   console.log('MessageList: 转发文件预览事件', file.originalName)
   emit('open-file-preview', file)
+}
+
+// 处理用户确认事件
+const handleUserConfirmation = (choice: '1' | '2') => {
+  console.log('MessageList: 转发用户确认事件', choice)
+  emit('send-confirmation', choice)
 }
 
 // 不要解构props，直接使用props.messages来保持响应式
@@ -45,7 +54,10 @@ const handleFilePreview = (file: FileVO) => {
           :is-error="msg.isError"
           :record-id="msg.rid"
           :attached-files="msg.attachedFiles"
+          :uid="props.uid"
+          :sid="props.sid"
           @open-file-preview="handleFilePreview"
+          @send-confirmation="handleUserConfirmation"
         />
       </el-col>
     </el-row>

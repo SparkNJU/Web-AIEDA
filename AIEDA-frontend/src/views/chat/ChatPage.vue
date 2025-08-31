@@ -324,6 +324,44 @@ const handleDeleteSession = async (sessionId: number) => {
   }
 }
 
+// 处理用户确认选择
+const handleUserConfirmation = async (choice: '1' | '2') => {
+  console.log('ChatPage: 接收到用户确认选择:', choice)
+  
+  if (!userId.value || !currentSessionId.value) {
+    console.error('缺少用户ID或会话ID')
+    return
+  }
+  
+  // 使用LLMIntervention的软干预方法发送确认信息
+  try {
+    const requestData = {
+      uid: userId.value,
+      sid: currentSessionId.value,
+      content: choice,
+      inputType: "intervention" as "intervention",
+      metadata: {
+        type: "soft"
+      }
+    }
+
+    console.log('发送用户确认到后端:', requestData)
+    
+    // 使用非流式接口发送确认信息
+    const response = await sendMessageInput(requestData)
+
+    if (response.code !== '200') {
+      throw new Error(`用户确认请求失败: ${response.message}`)
+    }
+
+    console.log('用户确认发送成功')
+    
+  } catch (error) {
+    console.error('发送用户确认失败:', error)
+    ElMessage.error('发送确认失败，请重试')
+  }
+}
+
 // 消息发送
 const handleSendMessage = async (messageToSend: string, agentType: AgentType, inputType: InputType, files?: FileVO[]) => {
   console.log('接收到发送消息事件:', { messageToSend, agentType, inputType, files })
@@ -932,7 +970,10 @@ const scrollToBottom = () => {
               v-if="currentSessionId !== 0 && messages.length > 0"
               :messages="messages"
               :has-file-preview="showFilePreview"
+              :uid="userId"
+              :sid="currentSessionId"
               @open-file-preview="openFilePreview"
+              @send-confirmation="handleUserConfirmation"
             />
             <WelcomeCard 
               v-else-if="showWelcomeCard"

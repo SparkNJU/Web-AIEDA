@@ -9,6 +9,7 @@ import 'katex/dist/katex.min.css'
 import type { FileVO } from '../../api/file'
 import { getFilesByRecordId, downloadFile } from '../../api/file'
 import MessageFileList from '../../components/File/MessageFileList.vue'
+import LLMUserConfirmation from '../../components/LLM/LLMUserConfirmation.vue'
 
 // 接收单个消息参数
 const props = defineProps<{
@@ -18,11 +19,14 @@ const props = defineProps<{
   isError?: boolean // 是否为错误消息
   recordId?: number // 消息记录ID，用于获取关联的文件
   attachedFiles?: FileVO[] // 新增：直接传入的附件文件列表（用于刚发送的消息）
+  uid?: number // 用户ID，用于发送确认信息
+  sid?: number // 会话ID，用于发送确认信息
 }>()
 
 // 定义事件
 const emit = defineEmits<{
   'open-file-preview': [file: FileVO] // 文件预览事件
+  'send-confirmation': [choice: '1' | '2'] // 用户确认事件
 }>()
 
 // 响应式变量来控制气泡的最小高度
@@ -91,6 +95,12 @@ const handleFileDownload = async (file: FileVO) => {
   }
 }
 
+// 处理用户确认选择
+const handleUserConfirmation = (choice: '1' | '2') => {
+  console.log('用户确认选择:', choice)
+  emit('send-confirmation', choice)
+}
+
 const md = new MarkdownIt({
   html: true,
   linkify: true,
@@ -150,7 +160,7 @@ watch(() => props.isStreaming, (newStreaming, oldStreaming) => {
 
 // 处理内容，将工具调用和引用标签转换为内联标签
 const processContent = (text: string) => {
-  if (!text) return { processedText: '', toolCalls: [], references: [] }
+  if (!text) return { processedText: '', toolCalls: [], references: [], userConfirmation: null }
   
   console.log('开始处理内容:', {
     originalLength: text.length,
@@ -162,6 +172,64 @@ const processContent = (text: string) => {
   const toolCalls: Array<{id: string, name: string, content: string, position: number}> = []
   const references: Array<{id: string, tagName: string, link: string, index: string, text: string, refId: number, position: number}> = []
   let refCounter = 1 // 按顺序增长的ref_id计数器
+  let userConfirmation: { message: string } | null = null
+  
+  // 调试：检查是否包含user_confirmation标签
+  const hasUserConfirmation = processed.includes('<user_confirmation>')
+  console.log('调试信息 - 检查user_confirmation:', {
+    hasTag: hasUserConfirmation,
+    contentPreview: processed.substring(0, 500),
+    timestamp: new Date().toLocaleTimeString()
+  })
+  
+  // 检测用户确认工具调用，匹配 <user_confirmation>任何内容</user_confirmation>
+  const userConfirmationMatch = processed.match(/<user_confirmation>([\s\S]*?)<\/user_confirmation>/)
+  if (userConfirmationMatch) {
+    console.log('匹配到user_confirmation标签:', {
+      fullMatch: userConfirmationMatch[0],
+      innerContent: userConfirmationMatch[1]
+    })
+    
+    try {
+      let content = userConfirmationMatch[1].trim()
+      
+      // 尝试提取JSON内容，支持多种格式
+      let jsonString = content
+      
+      // 如果包含代码块，提取代码块内容
+      const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+      if (codeBlockMatch) {
+        console.log('检测到代码块格式')
+        jsonString = codeBlockMatch[1].trim()
+      }
+      
+      console.log('准备解析JSON:', jsonString)
+      
+      // 处理单引号JSON格式，将单引号替换为双引号
+      let normalizedJsonString = jsonString
+      try {
+        // 尝试直接解析
+        JSON.parse(normalizedJsonString)
+      } catch (e) {
+        // 如果解析失败，尝试将单引号替换为双引号
+        console.log('JSON解析失败，尝试转换单引号为双引号')
+        normalizedJsonString = jsonString.replace(/'/g, '"')
+      }
+      
+      const confirmationData = JSON.parse(normalizedJsonString)
+      
+      if (confirmationData.message) {
+        userConfirmation = { message: confirmationData.message }
+        console.log('检测到用户确认请求:', userConfirmation)
+        
+        // 不删除user_confirmation标签，保持原内容显示
+      }
+    } catch (error) {
+      console.error('解析用户确认JSON失败:', error, '原始内容:', userConfirmationMatch[1])
+    }
+  } else {
+    console.log('未匹配到user_confirmation标签')
+  }
   
   // 处理工具调用标签（如 ```tool\n调用`mcp_client`\noperation: call_tool, arguments: {'query': '王力宏'}, tool_name: bing_search\n```）
   processed = processed.replace(/```tool\n([\s\S]*?)\n```/g, (_, toolContent, offset) => {
@@ -316,13 +384,15 @@ const processContent = (text: string) => {
     processedLength: processed.length,
     toolCallsCount: toolCalls.length,
     referencesCount: references.length,
+    hasUserConfirmation: !!userConfirmation,
     timestamp: new Date().toLocaleTimeString()
   })
   
   return {
     processedText: processed,
     toolCalls,
-    references
+    references,
+    userConfirmation
   }
 }
 
@@ -480,6 +550,16 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
           <span class="cursor">|</span>
         </div>
       </div>
+      
+      <!-- 用户确认组件 - 只在流式输出且检测到user_confirmation时显示 -->
+      <LLMUserConfirmation
+        v-if="props.isStreaming && processedContent.userConfirmation && props.uid && props.sid"
+        :message="processedContent.userConfirmation.message"
+        :uid="props.uid"
+        :sid="props.sid"
+        :visible="true"
+        @send-confirmation="handleUserConfirmation"
+      />
     </template>
   </el-card>
 </template>
