@@ -91,7 +91,7 @@
             <div class="file-info">
               <h3 class="file-name">{{ selectedFile?.originalName || '请选择文件' }}</h3>
               <div v-if="selectedFile" class="file-meta">
-                <el-tag size="small" type="info">{{ getFileTypeDisplay(selectedFile?.fileType) }}</el-tag>
+                <el-tag size="small" type="info">{{ getFileTypeDisplay(selectedFile?.fileType, selectedFile?.originalName) }}</el-tag>
               </div>
             </div>
           </div>
@@ -118,7 +118,7 @@
         </div>
         
         <!-- 文件预览内容 -->
-        <div class="preview-content" v-loading="isLoading">
+        <div class="preview-content" v-loading="isLoading" ref="previewContainerRef">>
           <template v-if="selectedFile">
             <!-- 图片预览 -->
             <template v-if="previewType === 'image' && previewUrl">
@@ -141,6 +141,32 @@
               </div>
             </template>
             
+            <!-- Markdown预览 -->
+            <template v-else-if="previewType === 'markdown' && previewContent">
+              <div class="markdown-preview">
+                <div class="md-content" v-html="previewContent"></div>
+              </div>
+            </template>
+            
+            <!-- Office文件预览 -->
+            <template v-else-if="previewType === 'docx' && previewUrl">
+              <div class="office-preview">
+                <VueOfficeDocx :key="`docx-${officeComponentKey}`" :src="previewUrl" />
+              </div>
+            </template>
+            
+            <template v-else-if="previewType === 'excel' && previewUrl">
+              <div class="office-preview">
+                <VueOfficeExcel :key="`excel-${officeComponentKey}`" :src="previewUrl" />
+              </div>
+            </template>
+            
+            <template v-else-if="previewType === 'pptx' && previewUrl">
+              <div class="office-preview">
+                <VueOfficePptx :key="`pptx-${officeComponentKey}`" :src="previewUrl" />
+              </div>
+            </template>
+            
             <!-- 不支持预览的文件 -->
             <template v-else-if="previewType === 'unsupported'">
               <div class="no-preview">
@@ -157,7 +183,7 @@
                 </el-button>
               </div>
             </template>
-            
+
             <!-- 加载状态 -->
             <template v-else-if="isLoading">
               <div class="preview-placeholder">
@@ -181,7 +207,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElButton, ElIcon, ElTag, ElMessage } from 'element-plus'
 import { 
   FolderOpened, 
@@ -195,6 +221,18 @@ import {
 } from '@element-plus/icons-vue'
 import { getHierarchicalFileStructure, downloadFile as apiDownloadFile, previewFile, canPreviewFile, type FileVO } from '../../api/file'
 import FileTreeNodeRecursive from './FileTreeNodeRecursive.vue'
+// 导入 markdown-it 和相关插件
+import MarkdownIt from 'markdown-it'
+import texmath from 'markdown-it-texmath'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
+// 导入 vue-office 组件
+import VueOfficeDocx from '@vue-office/docx'
+import VueOfficeExcel from '@vue-office/excel'
+import VueOfficePptx from '@vue-office/pptx'
+import '@vue-office/docx/lib/index.css'
+import '@vue-office/excel/lib/index.css'
+// 注意：@vue-office/pptx 不需要额外的 CSS 文件
 
 // 组件属性
 const props = defineProps<{
@@ -218,13 +256,119 @@ const selectedFile = ref<FileVO | null>(null)
 const selectedFileId = ref<string>('')
 const previewContent = ref('')
 const previewUrl = ref('')
-const previewType = ref<'text' | 'image' | 'pdf' | 'unsupported'>('unsupported')
+const previewType = ref<'text' | 'image' | 'pdf' | 'markdown' | 'docx' | 'excel' | 'pptx' | 'unsupported'>('unsupported')
 const isLoading = ref(false)
 const isDownloading = ref(false)
 const directoryCollapsed = ref(false)
 
+// Office 组件响应式尺寸相关
+const officeComponentKey = ref(0) // 用于强制重新渲染组件
+const previewContainerRef = ref<HTMLElement>()
+let resizeObserver: ResizeObserver | null = null
+let resizeTimer: number | null = null
+
+// 防抖函数
+const debounce = (func: Function, wait: number) => {
+  return function executedFunction(...args: any[]) {
+    const later = () => {
+      if (resizeTimer) clearTimeout(resizeTimer)
+      func(...args)
+    }
+    if (resizeTimer) clearTimeout(resizeTimer)
+    resizeTimer = window.setTimeout(later, wait)
+  }
+}
+
+// 初始化 Markdown 渲染器
+const md = new MarkdownIt({
+  html: true,
+  linkify: true,
+  typographer: true
+}).use(texmath, {
+  engine: katex,
+  delimiters: 'dollars',
+  katexOptions: {
+    throwOnError: false,
+    errorColor: '#cc0000'
+  }
+})
+
+// 处理Office组件尺寸变化
+const handleOfficeComponentResize = debounce(() => {
+  // 强制重新渲染Office组件以适应新的容器尺寸
+  officeComponentKey.value++
+  console.log('Office组件尺寸已更新')
+}, 300)
+
+// 初始化ResizeObserver
+const initResizeObserver = () => {
+  if (previewContainerRef.value && 'ResizeObserver' in window) {
+    resizeObserver = new ResizeObserver(() => {
+      // 只有当预览类型为Office文件时才触发重新渲染
+      if (['docx', 'excel', 'pptx'].includes(previewType.value)) {
+        handleOfficeComponentResize()
+      }
+    })
+    resizeObserver.observe(previewContainerRef.value)
+  }
+}
+
+// 清理ResizeObserver
+const cleanupResizeObserver = () => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+    resizeTimer = null
+  }
+}
+
 // 获取文件类型显示名称
-const getFileTypeDisplay = (fileType: string): string => {
+const getFileTypeDisplay = (fileType: string, fileName?: string): string => {
+  // 优先通过文件名扩展名判断
+  if (fileName) {
+    const lowerFileName = fileName.toLowerCase()
+    
+    // 程序代码文件类型
+    if (lowerFileName.endsWith('.ipynb')) return 'Jupyter Notebook'
+    if (lowerFileName.endsWith('.py')) return 'Python'
+    if (lowerFileName.endsWith('.java')) return 'Java'
+    if (lowerFileName.endsWith('.c')) return 'C'
+    if (lowerFileName.endsWith('.cpp') || lowerFileName.endsWith('.cxx')) return 'C++'
+    if (lowerFileName.endsWith('.h') || lowerFileName.endsWith('.hpp')) return 'Header'
+    if (lowerFileName.endsWith('.cs')) return 'C#'
+    if (lowerFileName.endsWith('.php')) return 'PHP'
+    if (lowerFileName.endsWith('.rb')) return 'Ruby'
+    if (lowerFileName.endsWith('.go')) return 'Go'
+    if (lowerFileName.endsWith('.rs')) return 'Rust'
+    if (lowerFileName.endsWith('.swift')) return 'Swift'
+    if (lowerFileName.endsWith('.kt')) return 'Kotlin'
+    if (lowerFileName.endsWith('.scala')) return 'Scala'
+    if (lowerFileName.endsWith('.pl') || lowerFileName.endsWith('.pm')) return 'Perl'
+    if (lowerFileName.endsWith('.r')) return 'R'
+    if (lowerFileName.endsWith('.sql')) return 'SQL'
+    if (lowerFileName.endsWith('.sh')) return 'Shell'
+    if (lowerFileName.endsWith('.bat')) return 'Batch'
+    if (lowerFileName.endsWith('.ps1')) return 'PowerShell'
+    if (lowerFileName.endsWith('.vb') || lowerFileName.endsWith('.vbs')) return 'VB'
+    if (lowerFileName.endsWith('.lua')) return 'Lua'
+    if (lowerFileName.endsWith('.dart')) return 'Dart'
+    if (lowerFileName.endsWith('.ts')) return 'TypeScript'
+    if (lowerFileName.endsWith('.jsx')) return 'JSX'
+    if (lowerFileName.endsWith('.tsx')) return 'TSX'
+    if (lowerFileName.endsWith('.vue')) return 'Vue'
+    if (lowerFileName.endsWith('.yaml') || lowerFileName.endsWith('.yml')) return 'YAML'
+    if (lowerFileName.endsWith('.toml')) return 'TOML'
+    if (lowerFileName.endsWith('.ini')) return 'INI'
+    if (lowerFileName.endsWith('.cfg') || lowerFileName.endsWith('.conf')) return 'Config'
+    if (lowerFileName.endsWith('.log')) return 'Log'
+    if (lowerFileName.endsWith('.gitignore')) return 'Git Ignore'
+    if (lowerFileName.endsWith('.dockerfile')) return 'Dockerfile'
+  }
+  
+  // 通过 MIME 类型判断
   if (fileType?.startsWith('text/')) return 'Text'
   if (fileType?.startsWith('image/')) return 'Image'
   if (fileType?.includes('pdf')) return 'PDF'
@@ -326,11 +470,20 @@ const loadFilePreview = async (file: FileVO) => {
     } else if (isPdfFile(fileType, fileName)) {
       previewType.value = 'pdf'
       await loadPdfPreview(file)
+    } else if (isMarkdownFile(fileType, fileName)) {
+      previewType.value = 'markdown'
+      await loadMarkdownPreview(file)
     } else {
-      // 默认按照文本文件处理，除非是黑名单中的文件
-      previewType.value = 'text'
-      await loadTextPreview(file)
-      console.log('按文本格式预览文件:', fileName, '文件类型:', fileType)
+      const { isOffice, officeType } = isOfficeFile(fileType, fileName)
+      if (isOffice && officeType) {
+        previewType.value = officeType
+        await loadOfficePreview(file, officeType)
+      } else {
+        // 默认按照文本文件处理
+        previewType.value = 'text'
+        await loadTextPreview(file)
+        console.log('按文本格式预览文件:', fileName, '文件类型:', fileType)
+      }
     }
 
   } catch (error: any) {
@@ -351,6 +504,38 @@ const isImageFile = (fileType: string, fileName: string): boolean => {
 // 判断是否为PDF文件
 const isPdfFile = (fileType: string, fileName: string): boolean => {
   return fileType.includes('pdf') || fileName.endsWith('.pdf')
+}
+
+// 判断是否为Markdown文件
+const isMarkdownFile = (fileType: string, fileName: string): boolean => {
+  return fileType.includes('markdown') || 
+         ['.md', '.markdown'].some(ext => fileName.endsWith(ext))
+}
+
+// 判断是否为Office文件
+const isOfficeFile = (fileType: string, fileName: string): { isOffice: boolean, officeType?: 'docx' | 'excel' | 'pptx' } => {
+  // Word 文档
+  if (fileType.includes('word') || fileType.includes('msword') || 
+      fileType.includes('wordprocessingml') || 
+      ['.doc', '.docx'].some(ext => fileName.endsWith(ext))) {
+    return { isOffice: true, officeType: 'docx' }
+  }
+  
+  // Excel 表格
+  if (fileType.includes('excel') || fileType.includes('sheet') || 
+      fileType.includes('spreadsheetml') || 
+      ['.xls', '.xlsx'].some(ext => fileName.endsWith(ext))) {
+    return { isOffice: true, officeType: 'excel' }
+  }
+  
+  // PowerPoint 演示文稿
+  if (fileType.includes('powerpoint') || fileType.includes('presentation') || 
+      fileType.includes('presentationml') || 
+      ['.ppt', '.pptx'].some(ext => fileName.endsWith(ext))) {
+    return { isOffice: true, officeType: 'pptx' }
+  }
+  
+  return { isOffice: false }
 }
 
 // 加载图片预览
@@ -376,6 +561,29 @@ const loadTextPreview = async (file: FileVO) => {
   const text = await blob.text()
   previewContent.value = text
   console.log('文本预览内容已加载，长度:', text.length)
+}
+
+// 加载 Markdown 预览
+const loadMarkdownPreview = async (file: FileVO) => {
+  const response = await previewFile(file.fileId)
+  const blob = new Blob([response.data], { type: 'text/plain' })
+  const text = await blob.text()
+  previewContent.value = md.render(text)
+  console.log('Markdown 预览内容已渲染，原始长度:', text.length)
+}
+
+// 加载 Office 文件预览
+const loadOfficePreview = async (file: FileVO, officeType: 'docx' | 'excel' | 'pptx') => {
+  const response = await previewFile(file.fileId)
+  const blob = new Blob([response.data], { 
+    type: officeType === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
+          officeType === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' :
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  })
+  previewUrl.value = URL.createObjectURL(blob)
+  // 重置组件key以确保重新渲染
+  officeComponentKey.value++
+  console.log(`${officeType.toUpperCase()} 预览URL已生成`)
 }
 
 // 下载文件
@@ -418,7 +626,27 @@ watch(() => [props.uid, props.sid], async (newValues, oldValues) => {
 watch(() => props.visible, async (visible) => {
   if (visible && props.uid && props.sid) {
     await loadFileList()
+    // 在下一个tick中初始化ResizeObserver
+    await nextTick()
+    initResizeObserver()
+  } else {
+    // 隐藏时清理ResizeObserver
+    cleanupResizeObserver()
   }
+})
+
+// 组件挂载时初始化
+onMounted(() => {
+  if (props.visible) {
+    nextTick(() => {
+      initResizeObserver()
+    })
+  }
+})
+
+// 组件卸载时清理
+onUnmounted(() => {
+  cleanupResizeObserver()
 })
 </script>
 
@@ -793,6 +1021,179 @@ watch(() => props.visible, async (visible) => {
   word-break: break-word; /* 强制长单词换行 */
   margin: 0;
   box-sizing: border-box; /* 确保padding不会导致溢出 */
+}
+
+/* Markdown预览样式 */
+.markdown-preview {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.md-content {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.md-content :deep(h1), .md-content :deep(h2), .md-content :deep(h3), 
+.md-content :deep(h4), .md-content :deep(h5), .md-content :deep(h6) {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  color: #303133;
+  font-weight: 600;
+}
+
+.md-content :deep(h1) {
+  font-size: 28px;
+  border-bottom: 2px solid #e4e7ed;
+  padding-bottom: 8px;
+}
+
+.md-content :deep(h2) {
+  font-size: 24px;
+  border-bottom: 1px solid #e4e7ed;
+  padding-bottom: 6px;
+}
+
+.md-content :deep(h3) {
+  font-size: 20px;
+}
+
+.md-content :deep(p) {
+  margin: 12px 0;
+  color: #606266;
+}
+
+.md-content :deep(code) {
+  background-color: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+  color: #e96900;
+}
+
+.md-content :deep(pre) {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 16px;
+  overflow-x: auto;
+  margin: 16px 0;
+}
+
+.md-content :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: #495057;
+}
+
+.md-content :deep(ul), .md-content :deep(ol) {
+  padding-left: 20px;
+  margin: 12px 0;
+}
+
+.md-content :deep(li) {
+  margin: 4px 0;
+  color: #606266;
+}
+
+.md-content :deep(blockquote) {
+  border-left: 4px solid #409eff;
+  background-color: #f5f7fa;
+  padding: 12px 16px;
+  margin: 16px 0;
+  color: #606266;
+}
+
+.md-content :deep(table) {
+  border-collapse: collapse;
+  margin: 16px 0;
+  width: 100%;
+}
+
+.md-content :deep(table th),
+.md-content :deep(table td) {
+  border: 1px solid #e4e7ed;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.md-content :deep(table th) {
+  background-color: #f5f7fa;
+  font-weight: 600;
+  color: #303133;
+}
+
+.md-content :deep(a) {
+  color: #409eff;
+  text-decoration: none;
+}
+
+.md-content :deep(a:hover) {
+  text-decoration: underline;
+}
+
+/* KaTeX数学公式样式 */
+.md-content :deep(.katex) {
+  font-size: 1.1em;
+  color: #2c3e50;
+}
+
+.md-content :deep(.katex-display) {
+  margin: 20px 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 16px;
+  background-color: #f9f9f9;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+}
+
+/* Office文件预览样式 */
+.office-preview {
+  height: 100%;
+  width: 100%;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: white;
+  position: relative; /* 添加相对定位 */
+}
+
+/* 确保Vue Office组件能够填满容器 */
+.office-preview :deep(.vue-office-docx),
+.office-preview :deep(.vue-office-excel),
+.office-preview :deep(.vue-office-pptx) {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+/* 针对Vue Office组件内部的canvas/iframe等元素 */
+.office-preview :deep(canvas),
+.office-preview :deep(iframe) {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* 确保容器能够响应式变化 */
+.office-preview :deep(.vue-office-container) {
+  width: 100% !important;
+  height: 100% !important;
+  resize: both; /* 允许调整大小 */
+  overflow: hidden;
 }
 
 .no-preview {
