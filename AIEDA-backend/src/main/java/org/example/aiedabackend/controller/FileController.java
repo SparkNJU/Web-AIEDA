@@ -331,7 +331,7 @@ public class FileController {
             System.out.println("本地文件访问成功，准备返回: " + filename);
             
             // 根据文件扩展名设置适当的Content-Type
-            String contentType = "application/octet-stream";
+            String contentType = "text/plain; charset=utf-8"; // 默认为文本类型
             String lowerFilename = filename.toLowerCase();
             
             if (lowerFilename.endsWith(".txt")) {
@@ -355,6 +355,7 @@ public class FileController {
             } else if (lowerFilename.matches(".*\\.(jpg|jpeg|png|gif|bmp|webp)$")) {
                 contentType = "image/" + lowerFilename.substring(lowerFilename.lastIndexOf('.') + 1);
             }
+            // 其他文件类型（包括各种程序代码文件）保持默认的 text/plain; charset=utf-8
             
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(contentType))
@@ -432,7 +433,29 @@ public class FileController {
             return "application/rtf";
         }
         
-        // 回退到MIME类型或默认值
-        return mimeType != null && !mimeType.trim().isEmpty() ? mimeType : "application/octet-stream";
+        // 程序代码类型（按文本处理）
+        else if (lowerFilename.endsWith(".ipynb") || lowerFilename.endsWith(".py") || lowerFilename.endsWith(".java") ||
+                 lowerFilename.endsWith(".c") || lowerFilename.endsWith(".cpp") || lowerFilename.endsWith(".h") ||
+                 lowerFilename.endsWith(".hpp") || lowerFilename.endsWith(".cs") || lowerFilename.endsWith(".php") ||
+                 lowerFilename.endsWith(".rb") || lowerFilename.endsWith(".go") || lowerFilename.endsWith(".rs") ||
+                 lowerFilename.endsWith(".swift") || lowerFilename.endsWith(".kt") || lowerFilename.endsWith(".scala") ||
+                 lowerFilename.endsWith(".pl") || lowerFilename.endsWith(".pm") || lowerFilename.endsWith(".r") ||
+                 lowerFilename.endsWith(".sql") || lowerFilename.endsWith(".sh") || lowerFilename.endsWith(".bat") ||
+                 lowerFilename.endsWith(".ps1") || lowerFilename.endsWith(".vb") || lowerFilename.endsWith(".vbs") ||
+                 lowerFilename.endsWith(".lua") || lowerFilename.endsWith(".dart") || lowerFilename.endsWith(".ts") ||
+                 lowerFilename.endsWith(".jsx") || lowerFilename.endsWith(".tsx") || lowerFilename.endsWith(".vue") ||
+                 lowerFilename.endsWith(".yaml") || lowerFilename.endsWith(".yml") || lowerFilename.endsWith(".toml") ||
+                 lowerFilename.endsWith(".ini") || lowerFilename.endsWith(".cfg") || lowerFilename.endsWith(".conf") ||
+                 lowerFilename.endsWith(".log") || lowerFilename.endsWith(".gitignore") || lowerFilename.endsWith(".dockerfile")) {
+            return "text/plain; charset=utf-8";
+        }
+        
+        // 如果是已知的MIME类型，使用传入的MIME类型
+        if (mimeType != null && !mimeType.trim().isEmpty()) {
+            return mimeType;
+        }
+        
+        // 对于未知的文件类型，默认按文本文件处理
+        return "text/plain; charset=utf-8";
     }
 }
