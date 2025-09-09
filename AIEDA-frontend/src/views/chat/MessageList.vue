@@ -47,7 +47,7 @@ const handleUserConfirmation = (choice: '1' | '2') => {
         class="message-col"
       >
         <MessageBubble 
-          :key="`msg-${msg.rid || msg.sid || 'temp'}-${index}-${msg.content?.length || 0}`"
+          :key="`msg-${msg.rid || msg.sid || 'temp'}-${index}-${msg.content?.length || 0}-${msg._updateTimestamp || msg._completeTimestamp || 0}`"
           :content="msg.content"
           :is-user="msg.direction"
           :is-streaming="msg.isStreaming"

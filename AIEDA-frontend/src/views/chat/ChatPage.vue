@@ -34,6 +34,10 @@ export type ChatRecord = {
   agentType?: string // Agent类型
   inputType?: string // 输入类型，config类型的消息不显示
   attachedFiles?: FileVO[] // 新增：附件文件列表（用于刚发送的消息）
+  _updateTimestamp?: number // 内部使用：强制更新时间戳
+  _completeTimestamp?: number // 内部使用：完成时间戳
+  _errorTimestamp?: number // 内部使用：错误时间戳
+  _connectionId?: number // 内部使用：连接标识
 }
 
 // 核心数据
@@ -471,8 +475,12 @@ const handleSendMessageStream = async (messageToSend: string, files?: FileVO[], 
   const sessionId = currentSessionId.value
   const sessionState = sessionStates.value[sessionId]
   
+  // 🔥 关键修复：重置流式状态，确保新的连接从干净状态开始
   sessionState.isStreaming = true
-  sessionState.currentStreamMessage = ''
+  sessionState.currentStreamMessage = '' // 清空累积消息
+  sessionState.streamingMessageIndex = undefined // 重置流式消息索引
+  
+  console.log(`[连接管理] 🔄 开始新的流式连接 - sessionId: ${sessionId}, inputType: ${inputType}`)
   
   // 如果不是config类型的请求，才添加AI消息占位符
   let aiMessageIndex = -1
@@ -484,7 +492,9 @@ const handleSendMessageStream = async (messageToSend: string, files?: FileVO[], 
       content: '⏳ 连接中...',
       direction: false,
       sid: sessionId,
-      isStreaming: true
+      isStreaming: true,
+      // 添加唯一标识，确保每次都是新的消息对象
+      _connectionId: Date.now()
     })
     scrollToBottom()
   }
@@ -698,16 +708,27 @@ const handleSSEEvent = async (eventData: any, messageIndex: number, sessionId: n
         sessionState.currentStreamMessage += deltaContent
         console.log(`[DELTA事件] 累积后长度: ${sessionState.currentStreamMessage.length} (新增: ${sessionState.currentStreamMessage.length - oldLength})`)
         
-        // 实时更新消息内容
+        // 实时更新消息内容 - 强制触发Vue响应式更新
         if (sessionState.messages[messageIndex]) {
           const msg = sessionState.messages[messageIndex]
-          sessionState.messages.splice(messageIndex, 1, { 
+          // 创建新的消息对象，确保引用发生变化以触发重新渲染
+          const updatedMsg = { 
             ...msg, 
             content: sessionState.currentStreamMessage, 
-            isStreaming: true 
-          })
+            isStreaming: true,
+            // 添加时间戳确保每次都是新对象，强制触发响应式更新
+            _updateTimestamp: Date.now()
+          }
+          sessionState.messages.splice(messageIndex, 1, updatedMsg)
           console.log(`[DELTA事件] UI更新完成，显示长度: ${sessionState.currentStreamMessage.length}`)
+          
+          // 强制触发Vue的重新渲染
           await nextTick()
+          
+          // 额外触发一次DOM更新，确保MessageBubble重新渲染
+          await nextTick(() => {
+            console.log('[DELTA事件] Vue DOM更新完成，MessageBubble应该已重新渲染markdown')
+          })
         }
         
         // 优化滚动，使用防抖
@@ -742,16 +763,25 @@ const handleSSEEvent = async (eventData: any, messageIndex: number, sessionId: n
         console.log('[COMPLETE事件] 设置最终消息内容')
         console.log(`[COMPLETE事件] 完整内容长度: ${completeContent.length}`)
         
-        // 直接更新消息内容和状态
-        sessionState.messages[messageIndex].content = completeContent
-        sessionState.messages[messageIndex].isStreaming = false
+        // 强制更新消息对象，确保触发响应式更新
+        const finalMsg = {
+          ...sessionState.messages[messageIndex],
+          content: completeContent,
+          isStreaming: false,
+          // 添加完成时间戳，确保是新对象
+          _completeTimestamp: Date.now()
+        }
         if (eventData.recordId) {
-          sessionState.messages[messageIndex].rid = eventData.recordId
+          finalMsg.rid = eventData.recordId
         }
         
-        // 使用nextTick确保DOM更新完成后再进行下一步操作
+        // 使用splice确保触发响应式更新
+        sessionState.messages.splice(messageIndex, 1, finalMsg)
+        
+        // 强制触发Vue的重新渲染
         await nextTick()
         console.log('[COMPLETE事件] Vue DOM更新完成，MessageBubble应该已重新渲染markdown')
+        
         // 只有当前会话才滚动到底部
         if (currentSessionId.value === sessionId) {
           scrollToBottom()
@@ -766,9 +796,17 @@ const handleSSEEvent = async (eventData: any, messageIndex: number, sessionId: n
       ElMessage.error(`AI回复出错: ${errorMsg}`)
       sessionState.isStreaming = false
       if (sessionState.messages[messageIndex]) {
-        sessionState.messages[messageIndex].content = `❌ 错误: ${errorMsg}`
-        sessionState.messages[messageIndex].isError = true
-        delete sessionState.messages[messageIndex].isStreaming
+        // 强制更新错误消息对象
+        const errorMsgObj = {
+          ...sessionState.messages[messageIndex],
+          content: `❌ 错误: ${errorMsg}`,
+          isError: true,
+          isStreaming: false,
+          _errorTimestamp: Date.now()
+        }
+        sessionState.messages.splice(messageIndex, 1, errorMsgObj)
+        // 强制触发Vue更新
+        await nextTick()
       }
       sessionState.currentStreamMessage = '' // 重置累积内容
       break

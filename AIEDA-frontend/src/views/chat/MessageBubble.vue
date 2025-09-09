@@ -32,6 +32,7 @@ const emit = defineEmits<{
 // 响应式变量来控制气泡的最小高度
 const bubbleMinHeight = ref('auto')
 const associatedFiles = ref<FileVO[]>([]) // 关联的文件列表
+const forceUpdateKey = ref(0) // 强制更新键
 
 // 计算最终要显示的文件列表
 const displayFiles = computed(() => {
@@ -129,10 +130,13 @@ const md = new MarkdownIt({
   }
 })
 
-// 添加watch来调试props变化，同时优化性能
+// 添加watch来调试props变化，同时优化性能和强制触发更新
 watch(() => props.content, (newContent, oldContent) => {
   // 当内容变化时，重置气泡高度
   bubbleMinHeight.value = 'auto'
+  
+  // 强制更新计算属性
+  forceUpdateKey.value++
   
   if (!props.isUser) {
     console.log('MessageBubble content 更新:', {
@@ -140,23 +144,37 @@ watch(() => props.content, (newContent, oldContent) => {
       new: newContent?.substring(0, 30) + '...',
       length: newContent?.length,
       isStreaming: props.isStreaming,
-      fullContent: newContent, // 添加完整内容用于调试
+      forceUpdateKey: forceUpdateKey.value,
       timestamp: new Date().toLocaleTimeString()
     })
+    
+    // 强制触发重新渲染，确保markdown内容及时更新
+    nextTick(() => {
+      console.log('MessageBubble DOM 更新完成，内容已刷新')
+    })
   }
-}, { immediate: true })
+}, { immediate: true, flush: 'post' }) // 使用post flush确保DOM更新后执行
 
 // 添加对isStreaming的监听，优化渲染时机
 watch(() => props.isStreaming, (newStreaming, oldStreaming) => {
+  // 强制更新计算属性
+  forceUpdateKey.value++
+  
   if (!props.isUser) {
     console.log('MessageBubble isStreaming 更新:', {
       old: oldStreaming,
       new: newStreaming,
       contentLength: props.content?.length,
+      forceUpdateKey: forceUpdateKey.value,
       timestamp: new Date().toLocaleTimeString()
     })
+    
+    // 当流式状态改变时，强制重新渲染
+    nextTick(() => {
+      console.log('MessageBubble 流式状态变化后强制重新渲染')
+    })
   }
-})
+}, { flush: 'post' })
 
 // 处理内容，将工具调用和引用标签转换为内联标签
 const processContent = (text: string) => {
@@ -396,9 +414,27 @@ const processContent = (text: string) => {
   }
 }
 
-// 计算处理后的内容
+// 计算处理后的内容 - 增加强制更新机制
 const processedContent = computed(() => {
-  return processContent(props.content)
+  // 添加一个依赖追踪，确保内容变化时重新计算
+  const content = props.content
+  const isStreaming = props.isStreaming
+  const updateKey = forceUpdateKey.value // 使用强制更新键
+  
+  const result = processContent(content)
+  
+  // 如果是流式输出，强制每次都重新处理
+  if (isStreaming && !props.isUser) {
+    console.log('processedContent 计算 (流式):', {
+      contentLength: content?.length,
+      toolCallsCount: result.toolCalls.length,
+      referencesCount: result.references.length,
+      updateKey,
+      timestamp: new Date().toLocaleTimeString()
+    })
+  }
+  
+  return result
 })
 
 // 添加点击处理函数
