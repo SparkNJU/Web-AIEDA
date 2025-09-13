@@ -972,7 +972,7 @@ const scrollToBottom = () => {
 </script>
 
 <template>
-  <div class="chat-container">
+  <div class="chat-container chat-theme">
     <div class="chat-content">
       <!-- 主聊天区域 -->
       <div 
@@ -1063,19 +1063,28 @@ const scrollToBottom = () => {
 
 <style scoped>
 .chat-container {
-  height: 80vh;
-  background-color: rgba(102, 8, 116, 0.02);
-
+  height: 100%; /* 填满main-content的高度 */
+  background: var(--chat-bg-primary);
+  /* 为了避免被Header遮挡，给聊天容器添加上边距 */
+  padding-top: 80px;
+  box-sizing: border-box;
 }
 
 .chat-content {
-  height: calc(100vh - 80px);
+  height: 100%; /* 填满chat-container的高度 */
   width: 100%;
-  background-color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: var(--chat-bg-secondary);
+  box-shadow: 0 2px 8px var(--chat-shadow);
   overflow: hidden;
   display: flex;
   flex-direction: row; /* 改为横向布局 */
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .chat-container {
+    padding-top: 120px; /* 移动端Header更高 */
+  }
 }
 
 .chat-layout {
@@ -1098,7 +1107,12 @@ const scrollToBottom = () => {
   position: relative;
   transition: all 0.3s ease;
   overflow: hidden; /* 防止内容溢出 */
-  background-color: #fafafa; /* 与消息列表保持一致的浅灰色背景 */
+  background-color: var(--chat-bg-primary); /* 使用主题变量而不是硬编码 */
+}
+
+/* 夜间模式下的chat-main特殊处理 */
+[data-theme="dark"] .chat-main {
+  background-color: #0f0f0f;
 }
 
 /* 响应式设计 */
@@ -1114,12 +1128,12 @@ const scrollToBottom = () => {
 
 .chat-main-header {
   padding: 12px 20px;
-  border-bottom: 1px solid #e0e0e0;
-  background-color: #f8f9fa;
+  border-bottom: 1px solid var(--chat-border);
+  background: var(--chat-bg-card);
   flex-shrink: 0;
-  width: 100%; /* 确保标题栏占满宽度 */
-  box-sizing: border-box; /* 包含padding和border在宽度计算中 */
-  overflow: hidden; /* 防止内容溢出 */
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .header-content {
@@ -1135,13 +1149,13 @@ const scrollToBottom = () => {
 
 .chat-main-header h2 {
   margin: 0;
-  color: rgb(102, 8, 116);
+  color: var(--chat-primary);
   font-size: 1.2rem;
   font-weight: 500;
-  white-space: nowrap; /* 防止标题换行 */
-  overflow: hidden; /* 隐藏溢出的文本 */
-  text-overflow: ellipsis; /* 显示省略号 */
-  max-width: 100%; /* 确保不超出容器 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .chat-main-content {

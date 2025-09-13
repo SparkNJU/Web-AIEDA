@@ -115,8 +115,8 @@ const handleDelete = async (e: Event) => {
 <template>
   <div 
     @click="emit('select')" 
-    class="session-container"
-    :class="{ 'is-active': isActive }"
+    class="session-container session-item chat-theme"
+    :class="{ 'is-active': isActive, 'active': isActive }"
   >
     <!-- 非编辑状态 -->
     <template v-if="!isEditing">
@@ -177,15 +177,16 @@ const handleDelete = async (e: Event) => {
   border-radius: 6px;
   margin: 2px 8px;
   transition: all 0.2s ease;
+  background: transparent;
 }
 
 .session-container:hover {
-  background-color: rgba(102, 8, 116, 0.08);
+  background: var(--chat-hover-bg);
 }
 
 .session-container.is-active {
-  background-color: rgba(102, 8, 116, 0.12);
-  border-left: 3px solid rgb(102, 8, 116);
+  background: var(--chat-active-bg);
+  border-left: 3px solid var(--chat-primary);
 }
 
 .session-info {
@@ -198,13 +199,14 @@ const handleDelete = async (e: Event) => {
 .session-icon {
   margin-right: 8px;
   flex-shrink: 0;
+  color: var(--chat-primary);
 }
 
 .session-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #333;
+  color: var(--chat-text-primary);
   font-size: 0.9rem;
 }
 
@@ -224,13 +226,56 @@ const handleDelete = async (e: Event) => {
   min-height: auto;
   width: 28px;
   height: 28px;
+  color: var(--chat-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.session-actions .el-button:hover {
+  background: var(--chat-hover-bg);
+  border-color: var(--chat-border);
 }
 
 .delete-btn {
-  color: #f56c6c !important;
+  color: var(--chat-error) !important;
 }
 
 .delete-btn:hover {
-  background-color: rgba(245, 108, 108, 0.1) !important;
+  background: rgba(239, 68, 68, 0.1) !important;
+  border-color: var(--chat-error) !important;
+}
+
+/* 夜间模式按钮样式 */
+[data-theme="dark"] .session-actions .el-button {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .delete-btn {
+  color: #ffcccb !important;
+}
+
+[data-theme="dark"] .session-icon {
+  color: #ffffff !important;
+}
+
+/* Element Plus输入框样式覆盖 */
+:deep(.el-input__wrapper) {
+  background: var(--chat-bg-input);
+  border-color: var(--chat-border);
+  color: var(--chat-text-primary);
+}
+
+:deep(.el-input__wrapper.is-focus) {
+  border-color: var(--chat-primary);
+  box-shadow: 0 0 0 2px var(--chat-primary-light);
+}
+
+:deep(.el-input__inner) {
+  color: var(--chat-text-primary);
+}
+
+:deep(.el-input__inner)::placeholder {
+  color: var(--chat-text-muted);
 }
 </style>

@@ -17,11 +17,11 @@ const { suggestions, hasFiles } = props
 </script>
 
 <template>
-  <div class="welcome-container">
-    <el-card class="welcome-card" shadow="never">
+  <div class="welcome-container chat-theme">
+    <el-card class="welcome-card welcome-card-theme chat-card" shadow="never">
       <div class="welcome-content">
         <h2>🤖 智能助手</h2>
-        <p>欢迎使用CPPO平台的智能助手！我可以帮助您解答各种问题。</p>
+        <p>欢迎使用Orvix平台的智能助手！我可以帮助您解答各种问题。</p>
         
         <div class="suggestions">
           <h3>💡 推荐问题</h3>
@@ -35,7 +35,7 @@ const { suggestions, hasFiles } = props
               v-for="(suggestion, index) in (hasFiles ? suggestions.slice(0, 2) : suggestions)" 
               :key="index"
               :index="index.toString()"
-              class="suggestion-item"
+              class="suggestion-item suggestion-item-theme"
             >
               {{ suggestion }}
             </el-menu-item>
@@ -52,28 +52,27 @@ const { suggestions, hasFiles } = props
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem; /* 减少padding以减少留白 */
-  background-color: #fafafa;
+  padding: 1rem;
+  background: var(--chat-bg-primary);
   overflow-y: auto;
-  min-height: 0; /* 允许收缩 */
-  height: 100%; /* 确保填满父容器 */
+  min-height: 0;
+  height: 100%;
 }
 
 .welcome-card {
-  max-width: 700px; /* 增加最大宽度 */
+  max-width: 700px;
   width: 100%;
   height: fit-content;
-  max-height: 90%; /* 限制最大高度避免溢出 */
+  max-height: 90%;
   border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  margin: auto; /* 确保居中 */
+  margin: auto;
   display: flex;
   flex-direction: column;
 }
 
 .welcome-content {
   text-align: center;
-  padding: 20px; /* 减少内边距 */
+  padding: 20px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -81,16 +80,16 @@ const { suggestions, hasFiles } = props
 }
 
 .welcome-content h2 {
-  color: rgb(102, 8, 116);
+  color: var(--chat-primary);
   font-size: 1.8rem;
-  margin-bottom: 0.8rem; /* 减少间距 */
+  margin-bottom: 0.8rem;
   font-weight: 500;
 }
 
 .welcome-content p {
-  color: #666;
+  color: var(--chat-text-secondary);
   font-size: 1rem;
-  margin-bottom: 1.5rem; /* 减少间距 */
+  margin-bottom: 1.5rem;
   line-height: 1.6;
 }
 
@@ -101,8 +100,8 @@ const { suggestions, hasFiles } = props
 }
 
 .suggestions h3 {
-  color: rgb(102, 8, 116);
-  margin-bottom: 1rem; /* 减少间距 */
+  color: var(--chat-primary);
+  margin-bottom: 1rem;
   font-size: 1.1rem;
   font-weight: 500;
 }
@@ -116,13 +115,11 @@ const { suggestions, hasFiles } = props
 }
 
 .suggestion-item {
-  height: 60px !important; /* 固定高度确保所有项目一致 */
+  height: 60px !important;
   line-height: 60px;
   text-align: center;
   margin-bottom: 0.8rem;
-  border: 1px solid rgba(102, 8, 116, 0.3);
   border-radius: 8px;
-  color: rgb(102, 8, 116) !important;
   background-color: transparent;
   transition: all 0.2s ease;
   display: flex;
@@ -133,27 +130,20 @@ const { suggestions, hasFiles } = props
   padding: 14px 18px;
 }
 
-.suggestion-item:hover {
-  background-color: rgba(102, 8, 116, 0.08) !important;
-  border-color: rgb(102, 8, 116);
-  color: rgb(102, 8, 116) !important;
-  transform: translateY(-1px);
-}
-
 .suggestion-item:last-child {
   margin-bottom: 0;
 }
 
 /* 移除Element Plus默认样式 */
 .suggestion-menu .el-menu-item.is-active {
-  background-color: rgba(102, 8, 116, 0.08) !important;
-  color: rgb(102, 8, 116) !important;
+  background-color: var(--chat-primary-light) !important;
+  color: var(--chat-primary) !important;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
   .suggestion-menu {
-    max-width: 100%; /* 小屏幕时使用全宽 */
+    max-width: 100%;
   }
   
   .welcome-container {
@@ -165,7 +155,7 @@ const { suggestions, hasFiles } = props
   }
   
   .suggestion-item {
-    height: 50px !important; /* 小屏幕时稍微减少高度 */
+    height: 50px !important;
     line-height: 50px;
     font-size: 0.85rem;
   }

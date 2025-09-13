@@ -376,7 +376,7 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 </script>
 
 <template>
-  <div class="chat-input">
+  <div class="chat-input chat-theme">
     <!-- 文件列表显示区域 - 移到输入框上方 -->
     <div v-if="uploadedFiles.length > 0" class="files-attachment-area">
       <div class="files-carousel">
@@ -563,8 +563,8 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 <style scoped>
 .chat-input {
   padding: 12px 16px;
-  border-top: 1px solid #e0e0e0;
-  background: #f8f9fa;
+  border-top: 1px solid var(--chat-border);
+  background: var(--chat-bg-secondary);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -574,11 +574,11 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 
 /* 文件附件区域 */
 .files-attachment-area {
-  background: white;
+  background: var(--chat-bg-card);
   border-radius: 12px;
   padding: 12px;
   margin-bottom: 8px;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--chat-border);
 }
 
 .files-carousel {
@@ -591,19 +591,19 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 .file-attachment-item {
   display: flex;
   align-items: center;
-  background: #f8f9fa;
+  background: var(--chat-bg-input);
   border-radius: 8px;
   padding: 8px 12px;
   min-width: 200px;
   max-width: 300px;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--chat-border);
   position: relative;
   transition: all 0.2s ease;
 }
 
 .file-attachment-item:hover {
-  border-color: rgb(102, 8, 116);
-  box-shadow: 0 2px 8px rgba(102, 8, 116, 0.1);
+  border-color: var(--chat-primary);
+  box-shadow: 0 2px 8px var(--chat-primary-light);
 }
 
 .file-icon-wrapper {
@@ -613,6 +613,7 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 
 .file-icon {
   font-size: 24px;
+  color: var(--chat-primary);
 }
 
 .file-content {
@@ -623,7 +624,7 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 .file-name {
   font-size: 12px;
   font-weight: 500;
-  color: #303133;
+  color: var(--chat-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -632,7 +633,7 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 
 .file-meta {
   font-size: 10px;
-  color: #909399;
+  color: var(--chat-text-muted);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -743,14 +744,16 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
   flex-shrink: 0;
   height: 32px;
   width: 32px;
-  border-color: #dcdfe6;
-  color: #606266;
+  border-color: var(--chat-border);
+  color: var(--chat-text-secondary);
   transition: all 0.2s ease;
+  background: transparent;
 }
 
 .control-button:hover {
-  border-color: rgb(102, 8, 116);
-  color: rgb(102, 8, 116);
+  border-color: var(--chat-primary);
+  color: var(--chat-primary);
+  background: var(--chat-primary-light);
 }
 
 .input-footer {
@@ -760,48 +763,61 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 
 .input-tips {
   font-size: 0.7em;
-  color: #999;
+  color: var(--chat-text-muted);
   text-align: center;
   margin: 0;
   padding: 0;
 }
 
 .file-count {
-  color: rgb(102, 8, 116);
+  color: var(--chat-primary);
   font-weight: 500;
 }
 
 .agent-hint {
-  color: #666;
+  color: var(--chat-text-secondary);
   font-weight: 400;
 }
 
 :deep(.el-textarea__inner) {
   border-radius: 8px;
-  border-color: #dcdfe6;
+  border-color: var(--chat-border);
   padding: 10px 12px;
   line-height: 1.4;
   min-height: 40px;
+  background: var(--chat-bg-input);
+  color: var(--chat-text-primary);
 }
 
 :deep(.el-textarea__inner):focus {
-  border-color: rgb(102, 8, 116);
+  border-color: var(--chat-primary);
+  box-shadow: 0 0 0 2px var(--chat-primary-light);
+}
+
+:deep(.el-textarea__inner)::placeholder {
+  color: var(--chat-text-muted);
 }
 
 /* Agent选择器样式 */
 :deep(.agent-selector .el-select__wrapper) {
   border-radius: 8px;
-  border-color: #dcdfe6;
+  border-color: var(--chat-border);
   height: 32px;
+  background: var(--chat-bg-input);
 }
 
 :deep(.agent-selector .el-select__wrapper.is-focused) {
-  border-color: rgb(102, 8, 116);
+  border-color: var(--chat-primary);
+  box-shadow: 0 0 0 2px var(--chat-primary-light);
 }
 
 :deep(.agent-selector .el-select__placeholder) {
   font-size: 12px;
-  color: #a8abb2;
+  color: var(--chat-text-muted);
+}
+
+:deep(.agent-selector .el-select__selected-item) {
+  color: var(--chat-text-primary);
 }
 
 /* 文件预览 Popover 样式 */

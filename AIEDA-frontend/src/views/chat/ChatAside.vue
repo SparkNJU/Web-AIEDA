@@ -33,7 +33,7 @@ watch(() => props.forceCollapsed, (newValue: boolean | undefined) => {
 </script>
 
 <template>
-  <div class="chat-aside" :class="{ 'collapsed': !sidebarOpen }">
+  <div class="chat-aside chat-sidebar chat-theme" :class="{ 'collapsed': !sidebarOpen }">
     <div class="chat-aside-header">
       <el-button 
         v-if="sidebarOpen"
@@ -41,7 +41,7 @@ watch(() => props.forceCollapsed, (newValue: boolean | undefined) => {
         @click="emit('create-session')" 
         :loading="props.isLoading" 
         round
-        style="background-color: rgb(102, 8, 116); border-color: rgb(102, 8, 116);"
+        style="background: var(--chat-primary); border-color: var(--chat-primary);"
       >
         <el-icon><Plus /></el-icon>
         新对话
@@ -89,8 +89,8 @@ watch(() => props.forceCollapsed, (newValue: boolean | undefined) => {
 .chat-aside {
   width: 180px;
   height: 100%;
-  border-right: 1px solid #e0e0e0;
-  background-color: #f8f9fa;
+  border-right: 1px solid var(--chat-border);
+  background: var(--chat-bg-sidebar);
   transition: width 0.3s ease;
   flex-shrink: 0;
 }

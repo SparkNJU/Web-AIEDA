@@ -1,5 +1,11 @@
 <script setup lang="ts">
-// 不需要导入任何组件，router-view 会根据当前路由显示对应组件
+import { onMounted } from 'vue'
+
+// 初始化主题
+onMounted(() => {
+  const savedTheme = localStorage.getItem('theme') || 'dark'
+  document.documentElement.setAttribute('data-theme', savedTheme)
+})
 </script>
 
 <template>
@@ -13,8 +19,5 @@
   box-sizing: border-box;
 }
 
-body {
-  font-family: Arial, sans-serif;
-  line-height: 1.6;
-}
+/* 全局样式已在 theme.css 中定义 */
 </style>

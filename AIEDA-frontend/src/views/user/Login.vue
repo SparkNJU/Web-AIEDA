@@ -85,8 +85,8 @@ const handleLogin = async () => {
     <div class="login-content">
       <!-- 左侧品牌区域 -->
       <div class="login-branding">
-        <h1 class="brand-title">AIEDA平台</h1>
-        <p class="brand-subtitle">AI赋能的<br />电子设计自动化平台</p>
+        <h1 class="brand-title">ORVIX</h1>
+        <p class="brand-subtitle">开启AI Agent新时代</p>
       </div>
 
       <!-- 右侧登录表单 -->
@@ -176,7 +176,7 @@ const handleLogin = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: rgba(102, 8, 116, 0.05);
+  background: var(--bg-primary);
   padding: 2rem;
 }
 
@@ -184,36 +184,56 @@ const handleLogin = async () => {
   display: flex;
   max-width: 1000px;
   width: 100%;
-  background-color: white;
-  border-radius: 10px;
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 40px var(--shadow-color);
 }
 
 .login-branding {
   flex: 1;
-  background-color: rgb(102, 8, 116);
+  background: linear-gradient(45deg, #8b5cf6, #3b82f6);
   color: white;
   padding: 3rem 2rem;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-branding::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 30% 40%, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
 }
 
 .brand-title {
   font-size: 2.5rem;
   margin-bottom: 1rem;
+  font-weight: 800;
+  position: relative;
+  z-index: 1;
 }
 
 .brand-subtitle {
   font-size: 1.5rem;
   line-height: 1.4;
   opacity: 0.9;
+  position: relative;
+  z-index: 1;
 }
 
 .login-form-wrapper {
   flex: 1.2;
   padding: 2rem;
+  background: var(--bg-card);
 }
 
 .login-card {
@@ -226,8 +246,13 @@ const handleLogin = async () => {
 }
 
 .login-title {
-  color: rgb(102, 8, 116);
+  color: var(--text-primary);
   font-size: 1.8rem;
+  font-weight: 700;
+  background: linear-gradient(45deg, var(--text-primary), #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .form-item {
@@ -239,45 +264,60 @@ const handleLogin = async () => {
   align-items: center;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: #333;
+  color: var(--text-secondary);
+  transition: color 0.3s ease;
 }
 
 .form-label.error {
-  color: #f56c6c;
+  color: #ef4444;
 }
 
 .icon {
   margin-right: 0.5rem;
   display: flex;
   align-items: center;
+  color: #8b5cf6;
 }
 
 .form-input {
   width: 100%;
   padding: 0.75rem 1rem;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
   font-size: 1rem;
-  transition: border-color 0.2s;
+  color: var(--text-primary);
+  transition: all 0.3s ease;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: rgb(102, 8, 116);
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  background: var(--bg-card);
+}
+
+.form-input::placeholder {
+  color: var(--text-muted);
 }
 
 .error-input {
-  border-color: #f56c6c;
+  border-color: #ef4444;
+}
+
+.error-input:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
 }
 
 .verify-group {
   display: flex;
   align-items: center;
+  gap: 10px;
 }
 
 .captcha-input {
   flex: 1;
-  margin-right: 10px;
 }
 
 .captcha-image {
@@ -287,9 +327,16 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
   overflow: hidden;
+  background: var(--bg-secondary);
+  transition: all 0.3s ease;
+}
+
+.captcha-image:hover {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.1);
 }
 
 .captcha-image img {
@@ -308,43 +355,63 @@ const handleLogin = async () => {
   flex: 1;
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 4px;
+  border-radius: 25px;
   font-size: 1rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.3s ease;
 }
 
 .primary-button {
-  background-color: rgb(102, 8, 116);
+  background: linear-gradient(45deg, #8b5cf6, #3b82f6);
   color: white;
+  box-shadow: 0 10px 30px rgba(139, 92, 246, 0.3);
 }
 
 .primary-button:hover {
-  background-color: rgba(102, 8, 116, 0.9);
+  transform: translateY(-2px);
+  box-shadow: 0 15px 40px rgba(139, 92, 246, 0.4);
 }
 
 .primary-button:disabled {
-  background-color: rgba(102, 8, 116, 0.5);
+  background: rgba(139, 92, 246, 0.5);
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .secondary-button {
-  background-color: white;
-  color: rgb(102, 8, 116);
-  border: 1px solid rgb(102, 8, 116);
+  background: transparent;
+  color: var(--text-primary);
+  border: 2px solid #8b5cf6;
 }
 
 .secondary-button:hover {
-  background-color: rgba(102, 8, 116, 0.05);
+  background: #8b5cf6;
+  color: white;
+  transform: translateY(-2px);
 }
 
 @media (max-width: 768px) {
   .login-content {
     flex-direction: column;
+    margin: 1rem;
   }
   
   .login-branding {
     padding: 2rem;
+  }
+  
+  .brand-title {
+    font-size: 2rem;
+  }
+  
+  .brand-subtitle {
+    font-size: 1.2rem;
+  }
+  
+  .button-group {
+    flex-direction: column;
   }
 }
 </style>

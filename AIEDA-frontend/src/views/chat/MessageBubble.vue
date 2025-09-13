@@ -237,6 +237,7 @@ const processContent = (text: string) => {
       const confirmationData = JSON.parse(normalizedJsonString)
       
       if (confirmationData.message) {
+    
         userConfirmation = { message: confirmationData.message }
         console.log('检测到用户确认请求:', userConfirmation)
         
@@ -263,44 +264,127 @@ const processContent = (text: string) => {
       position: offset
     })
     
-    // 返回带有容器的HTML结构
-    return `<span class="tag-container" data-tool-id="${toolId}">
-      <span class="inline-tag tool-tag" data-tool-id="${toolId}" title="点击查看详细信息">🔧 ${toolName}</span>
-      <div class="tag-expanded-content" data-for="${toolId}" style="display: none;">
-        <pre class="tool-content">${toolContent.trim()}</pre>
-      </div>
-    </span>`
+    // 使用 Markdown 折叠块显示工具调用
+    return `
+<details>
+<summary>${toolName}</summary>
+
+\`\`\`
+${toolContent.trim()}
+\`\`\`
+
+</details>
+`
   })
   
   // 处理普通工具调用标签 <tool_name>content</tool_name>（保留原有功能）
   // 修改正则表达式以支持带点号的标签名，如 <default_api.command_executor>
-  processed = processed.replace(/<([a-zA-Z_][a-zA-Z0-9_.]*?)>([\s\S]*?)<\/\1>/g, (match, toolName, toolContent, offset) => {
-    // 跳过引用类型的标签（有link和index属性的）
-    if (toolContent.includes('link=') && toolContent.includes('index=')) {
-      return match
+  // 使用更健壮的匹配策略来处理包含 < 符号的内容
+  
+  // 先找到所有可能的开始标签，限制标签名长度不超过25个字符
+  const toolTagPattern = /<([a-zA-Z_][a-zA-Z0-9_.]{0,24})>/g
+  const foundTags = []
+  let tagMatch
+  
+  // 收集所有开始标签的位置信息
+  while ((tagMatch = toolTagPattern.exec(processed)) !== null) {
+    const tagName = tagMatch[1]
+    const startPos = tagMatch.index
+    const startTagEnd = tagMatch.index + tagMatch[0].length
+    
+    // 额外检查：确保标签名不超过25个字符
+    if (tagName.length > 25) {
+      continue
     }
     
+    // 寻找对应的结束标签
+    const endTagPattern = new RegExp(`<\\/${tagName}>`, 'g')
+    endTagPattern.lastIndex = startTagEnd // 从开始标签后开始搜索
+    
+    const endMatch = endTagPattern.exec(processed)
+    if (endMatch) {
+      const endPos = endMatch.index
+      const endTagEnd = endMatch.index + endMatch[0].length
+      const content = processed.substring(startTagEnd, endPos)
+      
+      // 跳过引用类型的标签（有link和index属性的）
+      if (content.includes('link=') && content.includes('index=')) {
+        continue
+      }
+      
+      // 额外验证：确保这是一个合理的工具标签
+      // 工具标签内容通常包含JSON或其他结构化内容
+      const isLikelyToolTag = content.trim().length > 0 && (
+        content.includes('{') || 
+        content.includes('```') || 
+        content.includes('action') ||
+        content.includes('path') ||
+        content.includes('content')
+      )
+      
+      if (!isLikelyToolTag) {
+        continue
+      }
+      
+      foundTags.push({
+        tagName,
+        startPos,
+        startTagEnd,
+        endPos,
+        endTagEnd,
+        content,
+        fullMatch: processed.substring(startPos, endTagEnd)
+      })
+    }
+  }
+  
+  // 按位置从后往前排序，并记录需要的偏移量调整
+  foundTags.sort((a, b) => b.startPos - a.startPos)
+  
+  // 为避免位置偏移问题，我们构建替换映射，然后一次性进行替换
+  const replacements: Array<{
+    startPos: number
+    endPos: number 
+    replacement: string
+    original: string
+  }> = []
+  
+  foundTags.forEach(tag => {
     console.log('检测到工具调用标签:', {
-      toolName,
-      contentLength: toolContent.length,
-      offset
+      toolName: tag.tagName,
+      contentLength: tag.content.length,
+      startPos: tag.startPos
     })
     
     const toolId = `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     toolCalls.push({
       id: toolId,
-      name: toolName,
-      content: toolContent.trim(),
-      position: offset
+      name: tag.tagName,
+      content: tag.content.trim(),
+      position: tag.startPos
     })
     
-    // 返回带有容器的HTML结构
-    return `<span class="tag-container" data-tool-id="${toolId}">
-      <span class="inline-tag tool-tag" data-tool-id="${toolId}" title="点击查看详细信息">🔧 ${toolName}</span>
-      <div class="tag-expanded-content" data-for="${toolId}" style="display: none;">
-        <pre class="tool-content">${toolContent.trim()}</pre>
-      </div>
-    </span>`
+    // 使用 Markdown 折叠块来显示工具调用内容
+    const replacement = `
+<details>
+<summary>${tag.tagName}</summary>
+
+${tag.content.trim()}
+
+</details>
+`
+    
+    replacements.push({
+      startPos: tag.startPos,
+      endPos: tag.endTagEnd,
+      replacement: replacement,
+      original: tag.fullMatch
+    })
+  })
+  
+  // 执行替换，从后往前以避免位置偏移
+  replacements.forEach(rep => {
+    processed = processed.substring(0, rep.startPos) + rep.replacement + processed.substring(rep.endPos)
   })
   
   // 处理引用标签 <tag_name link="..." index="...">text</tag_name>
@@ -326,27 +410,18 @@ const processContent = (text: string) => {
       position: offset
     })
     
-    // 返回带有容器的HTML结构
-    return `<span class="tag-container" data-ref-id="${elementId}">
-      <span class="inline-tag reference-tag" data-ref-id="${elementId}" title="点击查看详细信息">📚 ${tagName}_${index}</span>
-      <div class="tag-expanded-content" data-for="${elementId}" style="display: none;">
-        <div class="reference-info">
-          <div class="reference-id"><strong>Ref ID:</strong> ref_${currentRefId}</div>
-          <div class="reference-tag"><strong>标签类型:</strong> ${tagName}</div>
-          <div class="reference-index"><strong>索引:</strong> ${index}</div>
-        </div>
-        <div class="reference-link">
-          <strong>链接:</strong> 
-          <a href="${decodeURIComponent(link)}" target="_blank" rel="noopener noreferrer" class="external-link">
-            ${decodeURIComponent(link)}
-          </a>
-        </div>
-        <div class="reference-text">
-          <strong>引用文本:</strong> 
-          <div class="reference-text-content">${text}</div>
-        </div>
-      </div>
-    </span>`
+    // 使用 Markdown 折叠块显示引用内容
+    return `
+<details>
+<summary>📚 ${tagName}_${index}</summary>
+
+**链接**: [${decodeURIComponent(link)}](${decodeURIComponent(link)})
+
+**引用文本**:
+${text}
+
+</details>
+`
   })
   
   // 处理旧的ref标签
@@ -542,7 +617,8 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 <template>
   <el-card 
     :class="[
-      props.isUser ? 'user-message' : 'ai-message',
+      'chat-theme',
+      props.isUser ? 'user-message message-bubble-user' : 'ai-message message-bubble-ai',
       { 'streaming-message': props.isStreaming, 'error-message': props.isError }
     ]"
     shadow="never"
@@ -602,8 +678,9 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 
 <style scoped>
 .user-message {
-  background-color: rgba(102, 8, 116, 0.08);
-  border: 1px solid rgba(102, 8, 116, 0.2);
+  background: var(--chat-user-message-bg);
+  color: var(--chat-user-message-text);
+  border: 1px solid var(--chat-primary);
   border-radius: 12px;
   transition: min-height 0.3s ease-out;
   width: 100%;
@@ -617,8 +694,9 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 }
 
 .ai-message {
-  background-color: #ffffff;
-  border: 1px solid #e8e8e8;
+  background: var(--chat-ai-message-bg);
+  color: var(--chat-ai-message-text);
+  border: 1px solid var(--chat-border);
   border-radius: 12px;
   transition: min-height 0.3s ease-out;
   width: 100%;
@@ -627,8 +705,8 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 }
 
 .streaming-message {
-  border-color: rgba(102, 8, 116, 0.3) !important;
-  box-shadow: 0 0 0 1px rgba(102, 8, 116, 0.1) !important;
+  border-color: var(--chat-primary) !important;
+  box-shadow: 0 0 0 1px var(--chat-primary-light) !important;
   position: relative;
 }
 
@@ -651,8 +729,9 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 }
 
 .error-message {
-  border-color: #f56565 !important;
-  background-color: #fef5f5 !important;
+  border-color: var(--chat-error) !important;
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: var(--chat-error) !important;
 }
 
 .streaming-indicator {
@@ -707,11 +786,19 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 .md-content :deep(code) {
   font-family: 'JetBrains Mono', 'Courier New', monospace;
   font-size: 0.9em;
-  background-color: #f0f0f0;
+  background-color: rgba(102, 8, 163, 0.15);
   padding: 2px 4px;
   border-radius: 3px;
   word-break: break-all;
   white-space: pre-wrap;
+  border: 1px solid rgba(102, 8, 163, 0.2);
+}
+
+/* 夜间模式下的code样式 */
+[data-theme="dark"] .md-content :deep(code) {
+  background-color: rgba(102, 8, 163, 0.25);
+  color: #ffffff;
+  border-color: rgba(102, 8, 163, 0.4);
 }
 
 .md-content :deep(p) {
@@ -751,6 +838,25 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   box-sizing: border-box;
   word-wrap: break-word;
   word-break: break-word;
+}
+
+/* Markdown引用块样式 */
+.md-content :deep(blockquote) {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border-left: 4px solid #6608a3;
+  background-color: rgba(102, 8, 163, 0.1);
+  border-radius: 6px;
+  color: #333;
+  font-style: italic;
+}
+
+/* 夜间模式下的引用块样式 */
+[data-theme="dark"] .md-content :deep(blockquote) {
+  background-color: rgba(20, 20, 20, 0.9);
+  color: #ffffff;
+  border-left-color: rgba(102, 8, 163, 0.8);
+  border: 1px solid rgba(102, 8, 163, 0.3);
 }
 
 /* KaTeX数学公式样式优化 */
@@ -872,6 +978,53 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   }
 }
 
+/* 工具调用折叠块样式 */
+.md-content :deep(details) {
+  margin: 12px 0;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #fafafa;
+}
+
+.md-content :deep(details > summary) {
+  padding: 12px 16px;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #e8e8e8;
+  cursor: pointer;
+  font-weight: 600;
+  color: #333;
+  user-select: none;
+  transition: background-color 0.2s ease;
+}
+
+.md-content :deep(details > summary:hover) {
+  background-color: #e9ecef;
+}
+
+.md-content :deep(details[open] > summary) {
+  background-color: #e3f2fd;
+  color: #1976d2;
+  border-bottom-color: #bbdefb;
+}
+
+.md-content :deep(details > summary::marker) {
+  color: #1976d2;
+}
+
+.md-content :deep(details > *:not(summary)) {
+  padding: 16px;
+  background-color: #ffffff;
+  border-top: 1px solid #e8e8e8;
+}
+
+.md-content :deep(details pre) {
+  margin: 0;
+  background-color: #f8f9fa !important;
+  border: 1px solid #e9ecef !important;
+  border-radius: 4px !important;
+}
+
 /* 深色主题支持 */
 @media (prefers-color-scheme: dark) {
   .md-content :deep(.katex) {
@@ -892,6 +1045,37 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
     background-color: #3c2415;
     border-color: #8b4513;
     color: #ff6b6b;
+  }
+
+  /* 深色主题下的折叠块样式 */
+  .md-content :deep(details) {
+    border-color: #444;
+    background-color: #2a2a2a;
+  }
+
+  .md-content :deep(details > summary) {
+    background-color: #333;
+    border-bottom-color: #444;
+    color: #fff;
+  }
+
+  .md-content :deep(details > summary:hover) {
+    background-color: #404040;
+  }
+
+  .md-content :deep(details[open] > summary) {
+    background-color: #1e3a8a;
+    color: #93c5fd;
+  }
+
+  .md-content :deep(details > *:not(summary)) {
+    background-color: #1a1a1a;
+    border-top-color: #444;
+  }
+
+  .md-content :deep(details pre) {
+    background-color: #2d3748 !important;
+    border-color: #4a5568 !important;
   }
 }
 

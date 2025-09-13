@@ -70,7 +70,7 @@ router.beforeEach((to, _, next) => {
   const token = sessionStorage.getItem('token')
 
   // 设置页面标题
-  document.title = `${to.meta.title || 'AIEDA平台'}`
+  document.title = `${to.meta.title || 'ORVIX'}`
 
   if (token) {
     if (to.path === '/login' || to.path === '/register') {

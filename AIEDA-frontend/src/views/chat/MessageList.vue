@@ -69,11 +69,16 @@ const handleUserConfirmation = (choice: '1' | '2') => {
   flex: 1;
   overflow-y: auto;
   padding: 12px 16px;
-  background-color: #fafafa;
+  background-color: var(--chat-bg-primary);
   min-height: 0; /* 允许收缩 */
   height: 100%; /* 确保填满父容器 */
   width: 100%; /* 确保占满宽度 */
   box-sizing: border-box;
+}
+
+/* 夜间模式下的消息列表背景 */
+[data-theme="dark"] .chat-messages {
+  background-color: #0f0f0f;
 }
 
 .message-row { 

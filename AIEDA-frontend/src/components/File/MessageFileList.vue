@@ -187,4 +187,42 @@ const getFileExtension = (filename: string) => {
   background: rgba(40, 167, 69, 0.1);
   color: #28a745;
 }
+
+/* 夜间模式样式 */
+[data-theme="dark"] .message-files-area {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(102, 8, 163, 0.3);
+}
+
+[data-theme="dark"] .message-file-item {
+  background: rgba(30, 30, 30, 0.8);
+  border-color: rgba(102, 8, 163, 0.25);
+}
+
+[data-theme="dark"] .message-file-item:hover {
+  background: rgba(40, 40, 40, 0.9);
+  border-color: rgba(102, 8, 163, 0.5);
+  box-shadow: 0 2px 8px rgba(102, 8, 163, 0.2);
+}
+
+[data-theme="dark"] .file-name {
+  color: #ffffff;
+}
+
+[data-theme="dark"] .file-meta {
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .file-actions {
+  background: rgba(20, 20, 20, 0.95);
+}
+
+[data-theme="dark"] .action-btn {
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .action-btn:hover {
+  background: rgba(102, 8, 163, 0.2);
+  color: #ffffff;
+}
 </style>

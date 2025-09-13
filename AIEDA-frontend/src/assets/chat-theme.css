@@ -1,0 +1,486 @@
+/* 聊天界面专用主题样式 */
+
+/* 聊天主题色彩变量 - 基于index.html的Orvix品牌色 */
+:root {
+  /* 主品牌色 */
+  --chat-primary: #6608a3; /* Orvix主色 - 深紫色 */
+  --chat-primary-light: rgba(102, 8, 163, 0.1);
+  --chat-primary-hover: rgba(102, 8, 163, 0.8);
+  
+  /* 背景色 */
+  --chat-bg-primary: #1a1a1a;
+  --chat-bg-secondary: #2d2d2d;
+  --chat-bg-card: rgba(255, 255, 255, 0.05);
+  --chat-bg-input: rgba(255, 255, 255, 0.08);
+  --chat-bg-sidebar: #1e1e1e;
+  
+  /* 文本色 */
+  --chat-text-primary: #ffffff;
+  --chat-text-secondary: #cbd5e1;
+  --chat-text-muted: #94a3b8;
+  --chat-text-disabled: #64748b;
+  
+  /* 边框色 */
+  --chat-border: rgba(255, 255, 255, 0.1);
+  --chat-border-light: rgba(255, 255, 255, 0.05);
+  --chat-border-focus: var(--chat-primary);
+  
+  /* 阴影 */
+  --chat-shadow: rgba(0, 0, 0, 0.3);
+  --chat-shadow-light: rgba(0, 0, 0, 0.1);
+  
+  /* 消息气泡色 */
+  --chat-user-message-bg: var(--chat-primary);
+  --chat-user-message-text: #ffffff;
+  --chat-ai-message-bg: rgba(255, 255, 255, 0.08);
+  --chat-ai-message-text: var(--chat-text-primary);
+  
+  /* 状态色 */
+  --chat-success: #10b981;
+  --chat-warning: #f59e0b;
+  --chat-error: #ef4444;
+  --chat-info: #3b82f6;
+  
+  /* 交互状态 */
+  --chat-hover-bg: rgba(255, 255, 255, 0.05);
+  --chat-active-bg: rgba(102, 8, 163, 0.12);
+  --chat-selected-bg: rgba(102, 8, 163, 0.15);
+}
+
+/* 浅色主题 */
+[data-theme="light"] {
+  /* 背景色 */
+  --chat-bg-primary: #f8fafc;
+  --chat-bg-secondary: #ffffff;
+  --chat-bg-card: rgba(255, 255, 255, 0.95);
+  --chat-bg-input: #ffffff;
+  --chat-bg-sidebar: #f1f5f9;
+  
+  /* 文本色 */
+  --chat-text-primary: #0f172a;
+  --chat-text-secondary: #334155;
+  --chat-text-muted: #64748b;
+  --chat-text-disabled: #94a3b8;
+  
+  /* 边框色 */
+  --chat-border: rgba(15, 23, 42, 0.1);
+  --chat-border-light: rgba(15, 23, 42, 0.05);
+  
+  /* 阴影 */
+  --chat-shadow: rgba(0, 0, 0, 0.08);
+  --chat-shadow-light: rgba(0, 0, 0, 0.04);
+  
+  /* 消息气泡色 */
+  --chat-ai-message-bg: rgba(241, 245, 249, 0.8);
+  --chat-ai-message-text: var(--chat-text-primary);
+  
+  /* 交互状态 */
+  --chat-hover-bg: rgba(15, 23, 42, 0.05);
+  --chat-active-bg: rgba(102, 8, 163, 0.08);
+  --chat-selected-bg: rgba(102, 8, 163, 0.12);
+}
+
+/* 夜间模式样式增强 */
+[data-theme="dark"] {
+  /* 背景色 */
+  --chat-bg-primary: #0f0f0f;
+  --chat-bg-secondary: #1a1a1a;
+  --chat-bg-card: rgba(255, 255, 255, 0.08);
+  --chat-bg-input: rgba(255, 255, 255, 0.1);
+  --chat-bg-sidebar: #141414;
+  
+  /* 文本色 - 夜间模式使用白色而非紫色 */
+  --chat-text-primary: #ffffff;
+  --chat-text-secondary: #e2e8f0;
+  --chat-text-muted: #94a3b8;
+  --chat-text-disabled: #64748b;
+  
+  /* 消息气泡色 - 修复AI消息夜间模式样式 */
+  --chat-ai-message-bg: rgba(30, 30, 30, 0.9);
+  --chat-ai-message-text: #ffffff;
+  
+  /* 边框色 */
+  --chat-border: rgba(255, 255, 255, 0.15);
+  --chat-border-light: rgba(255, 255, 255, 0.08);
+  
+  /* 交互状态 */
+  --chat-hover-bg: rgba(255, 255, 255, 0.08);
+  --chat-active-bg: rgba(102, 8, 163, 0.15);
+  --chat-selected-bg: rgba(102, 8, 163, 0.2);
+}
+
+/* 聊天容器基础样式 */
+.chat-theme {
+  background: var(--chat-bg-primary);
+  color: var(--chat-text-primary);
+  transition: all 0.3s ease;
+}
+
+/* 聊天输入框样式 */
+.chat-input-theme {
+  background: var(--chat-bg-input);
+  border: 1px solid var(--chat-border);
+  color: var(--chat-text-primary);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.chat-input-theme:focus {
+  border-color: var(--chat-primary);
+  box-shadow: 0 0 0 2px var(--chat-primary-light);
+}
+
+.chat-input-theme::placeholder {
+  color: var(--chat-text-muted);
+}
+
+/* 聊天按钮样式 */
+.chat-btn-primary {
+  background: var(--chat-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.chat-btn-primary:hover {
+  background: var(--chat-primary-hover);
+  transform: translateY(-1px);
+}
+
+.chat-btn-primary:disabled {
+  background: var(--chat-text-disabled);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.chat-btn-secondary {
+  background: transparent;
+  color: var(--chat-text-secondary);
+  border: 1px solid var(--chat-border);
+  border-radius: 8px;
+  padding: 8px 16px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.chat-btn-secondary:hover {
+  background: var(--chat-hover-bg);
+  border-color: var(--chat-primary);
+  color: var(--chat-primary);
+}
+
+/* 聊天卡片样式 */
+.chat-card {
+  background: var(--chat-bg-card);
+  border: 1px solid var(--chat-border);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px var(--chat-shadow);
+  transition: all 0.3s ease;
+}
+
+.chat-card:hover {
+  border-color: var(--chat-primary);
+  box-shadow: 0 8px 30px var(--chat-shadow);
+}
+
+/* 侧边栏样式 */
+.chat-sidebar {
+  background: var(--chat-bg-sidebar);
+  border-right: 1px solid var(--chat-border);
+}
+
+/* 会话项样式 */
+.session-item {
+  background: transparent;
+  border-radius: 8px;
+  margin: 4px 8px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.session-item:hover {
+  background: var(--chat-hover-bg);
+}
+
+.session-item.active {
+  background: var(--chat-active-bg);
+  border-left: 3px solid var(--chat-primary);
+}
+
+/* 消息气泡样式 */
+.message-bubble-user {
+  background: var(--chat-user-message-bg);
+  color: var(--chat-user-message-text);
+  border-radius: 18px 18px 4px 18px;
+  max-width: 70%;
+  margin-left: auto;
+  box-shadow: 0 2px 8px var(--chat-shadow-light);
+}
+
+.message-bubble-ai {
+  background: var(--chat-ai-message-bg);
+  color: var(--chat-ai-message-text);
+  border-radius: 18px 18px 18px 4px;
+  max-width: 85%;
+  margin-right: auto;
+  border: 1px solid var(--chat-border-light);
+  box-shadow: 0 2px 8px var(--chat-shadow-light);
+}
+
+/* 文件附件样式 */
+.file-attachment {
+  background: var(--chat-bg-card);
+  border: 1px solid var(--chat-border);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.file-attachment:hover {
+  border-color: var(--chat-primary);
+  box-shadow: 0 2px 8px var(--chat-primary-light);
+}
+
+/* 欢迎卡片样式 */
+.welcome-card-theme {
+  background: var(--chat-bg-card);
+  border: 1px solid var(--chat-border);
+  backdrop-filter: blur(15px);
+  box-shadow: 0 8px 32px var(--chat-shadow);
+}
+
+.welcome-card-theme h2 {
+  color: var(--chat-primary);
+}
+
+.welcome-card-theme p {
+  color: var(--chat-text-secondary);
+}
+
+/* 建议问题样式 */
+.suggestion-item-theme {
+  background: transparent;
+  border: 1px solid var(--chat-border);
+  color: var(--chat-primary);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.suggestion-item-theme:hover {
+  background: var(--chat-primary-light);
+  border-color: var(--chat-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px var(--chat-primary-light);
+}
+
+/* 滚动条样式 */
+.chat-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: var(--chat-bg-secondary);
+  border-radius: 3px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--chat-primary);
+  border-radius: 3px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--chat-primary-hover);
+}
+
+/* 加载状态样式 */
+.chat-loading {
+  color: var(--chat-text-muted);
+}
+
+.chat-streaming::after {
+  content: '▊';
+  animation: chat-blink 1s infinite;
+  color: var(--chat-primary);
+}
+
+@keyframes chat-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* 错误状态样式 */
+.chat-error {
+  color: var(--chat-error);
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--chat-error);
+}
+
+/* 成功状态样式 */
+.chat-success {
+  color: var(--chat-success);
+  background: rgba(16, 185, 129, 0.1);
+  border-color: var(--chat-success);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .message-bubble-user,
+  .message-bubble-ai {
+    max-width: 90%;
+  }
+  
+  .chat-card {
+    margin: 8px;
+    border-radius: 8px;
+  }
+  
+  .session-item {
+    margin: 2px 4px;
+  }
+}
+
+/* 深色主题特定样式 */
+[data-theme="dark"] .chat-theme {
+  /* 增强深色主题的对比度 */
+  --chat-bg-card: rgba(255, 255, 255, 0.08);
+  --chat-border: rgba(255, 255, 255, 0.15);
+}
+
+/* 浅色主题特定样式 */
+[data-theme="light"] .chat-theme {
+  /* 优化浅色主题的可读性 */
+  --chat-bg-card: rgba(255, 255, 255, 0.9);
+  --chat-shadow: rgba(0, 0, 0, 0.1);
+}
+
+/* 文件组件夜间模式样式 */
+[data-theme="dark"] .file-attachment {
+  background: rgba(30, 30, 30, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .file-attachment:hover {
+  background: rgba(40, 40, 40, 0.9) !important;
+  border-color: var(--chat-primary) !important;
+}
+
+[data-theme="dark"] .file-name {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .file-meta {
+  color: #cbd5e1 !important;
+}
+
+/* LLM组件夜间模式样式 */
+[data-theme="dark"] .user-confirmation {
+  background: rgba(30, 30, 30, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .confirmation-message {
+  color: #ffffff !important;
+}
+
+/* 对话框夜间模式 */
+[data-theme="dark"] .el-dialog {
+  background: rgba(20, 20, 20, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .el-dialog__header {
+  background: rgba(30, 30, 30, 0.8) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .el-dialog__title {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .el-dialog__body {
+  background: rgba(20, 20, 20, 0.9) !important;
+  color: #ffffff !important;
+}
+
+/* 文件预览夜间模式 */
+[data-theme="dark"] .file-preview-overlay {
+  background: rgba(0, 0, 0, 0.8) !important;
+}
+
+[data-theme="dark"] .directory-panel {
+  background: rgba(20, 20, 20, 0.95) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .directory-header {
+  background: rgba(30, 30, 30, 0.9) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .file-tree {
+  background: rgba(15, 15, 15, 0.9) !important;
+}
+
+[data-theme="dark"] .tree-node {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .folder-header:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .file-node:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .file-node.active {
+  background: rgba(102, 8, 163, 0.3) !important;
+  border-color: var(--chat-primary) !important;
+}
+
+/* 工具提示样式 */
+.chat-tooltip {
+  background: var(--chat-bg-secondary);
+  color: var(--chat-text-primary);
+  border: 1px solid var(--chat-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  box-shadow: 0 4px 12px var(--chat-shadow);
+}
+
+/* 分割线样式 */
+.chat-divider {
+  border-color: var(--chat-border);
+  opacity: 0.6;
+}
+
+/* 徽章样式 */
+.chat-badge {
+  background: var(--chat-primary);
+  color: white;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.chat-badge.success {
+  background: var(--chat-success);
+}
+
+.chat-badge.warning {
+  background: var(--chat-warning);
+}
+
+.chat-badge.error {
+  background: var(--chat-error);
+}
