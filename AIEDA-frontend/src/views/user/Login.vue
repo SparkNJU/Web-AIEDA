@@ -178,6 +178,8 @@ const handleLogin = async () => {
   align-items: center;
   background: var(--bg-primary);
   padding: 2rem;
+  padding-top: calc(2rem + 80px); /* 桌面端避开Header */
+  box-sizing: border-box;
 }
 
 .login-content {
@@ -393,6 +395,10 @@ const handleLogin = async () => {
 }
 
 @media (max-width: 768px) {
+  .login-container {
+    padding-top: calc(1rem + 60px); /* 移动端避开Header */
+  }
+  
   .login-content {
     flex-direction: column;
     margin: 1rem;

@@ -38,7 +38,7 @@ html, body {
 .main-content {
   flex: 1;
   background: var(--bg-primary);
-  height: calc(100vh - 80px); /* 修正：应该是减去Header的高度 */
+  height: 100vh; /* 使用全视口高度 */
   overflow: auto; /* 内容区域如果需要可以滚动 */
   box-sizing: border-box; /* 确保padding和border包含在高度计算中 */
 }
@@ -46,7 +46,7 @@ html, body {
 /* 移动端适配 */
 @media (max-width: 768px) {
   .main-content {
-    height: calc(100vh - 120px); /* 移动端Header更高 */
+    padding: 0; /* 移动端移除所有内边距，让各页面自己处理Header空间 */
   }
 }
 

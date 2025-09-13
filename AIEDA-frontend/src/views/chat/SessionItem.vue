@@ -278,4 +278,79 @@ const handleDelete = async (e: Event) => {
 :deep(.el-input__inner)::placeholder {
   color: var(--chat-text-muted);
 }
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .session-container {
+    padding: 4px 8px; /* 大幅减少内边距 */
+    margin: 1px 2px; /* 减少外边距 */
+    border-radius: 4px; /* 减小圆角 */
+    min-height: 32px; /* 设置最小高度 */
+  }
+  
+  .session-info {
+    gap: 4px; /* 减少图标和文字间距 */
+  }
+  
+  .session-icon {
+    margin-right: 4px; /* 减少图标右边距 */
+    font-size: 12px; /* 图标更小 */
+    flex-shrink: 0;
+  }
+  
+  .session-title {
+    font-size: 0.7rem; /* 显著减小标题字体 */
+    line-height: 1.2; /* 紧凑行高 */
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 80px; /* 限制标题最大宽度 */
+  }
+  
+  .session-actions {
+    gap: 1px; /* 按钮间距更小 */
+    opacity: 0.8;
+  }
+  
+  .session-actions .el-button {
+    width: 20px; /* 按钮更小 */
+    height: 20px;
+    padding: 0;
+    min-height: 20px;
+    font-size: 10px;
+    border-radius: 3px;
+  }
+  
+  /* 移动端输入框优化 */
+  :deep(.el-input--small .el-input__wrapper) {
+    padding: 2px 6px; /* 输入框内边距更小 */
+    font-size: 0.7rem;
+    min-height: 24px;
+    height: 24px;
+  }
+  
+  :deep(.el-input__inner) {
+    font-size: 0.7rem;
+    line-height: 1.2;
+  }
+  
+  /* 移动端悬停效果调整 */
+  .session-container:hover,
+  .session-container.is-active {
+    background: var(--chat-active-bg);
+    border-left: 2px solid var(--chat-primary); /* 减小左边框宽度 */
+  }
+  
+  /* 移动端始终显示操作按钮 */
+  .session-actions {
+    display: flex;
+    opacity: 0.6;
+  }
+  
+  .session-container:hover .session-actions,
+  .session-container.is-active .session-actions {
+    opacity: 1;
+  }
+}
 </style>

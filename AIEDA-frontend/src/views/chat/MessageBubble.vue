@@ -963,18 +963,182 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .md-content :deep(.katex-display) {
-    font-size: 0.9em;
-    padding: 12px;
-    margin: 16px 0;
+  /* 移动端消息气泡整体优化 */
+  .user-message {
+    padding: 4px 8px; /* 大幅减少内边距 */
+    font-size: 0.7rem; /* 显著减小字体 */
+    line-height: 1.2; /* 更紧凑的行高 */
+    border-radius: 10px; /* 减小圆角 */
+    max-width: 100%;
+    margin: 2px 0; /* 减少消息间距 */
   }
   
+  .user-message-content {
+    font-size: 0.7rem;
+    line-height: 1.2;
+  }
+  
+  .ai-message {
+    padding: 4px 8px; /* 大幅减少内边距 */
+    font-size: 0.7rem; /* 显著减小字体 */
+    line-height: 1.2; /* 更紧凑的行高 */
+    border-radius: 10px; /* 减小圆角 */
+    max-width: 100%;
+    margin: 2px 0; /* 减少消息间距 */
+  }
+  
+  /* 移动端主要内容区域 */
+  .main-content {
+    font-size: 0.7rem;
+    line-height: 1.2;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* 移动端markdown内容核心优化 */
+  .md-content {
+    font-size: 0.7rem !important; /* 核心字体大小 */
+    line-height: 1.2 !important; /* 紧凑行高 */
+  }
+  
+  /* 移动端段落优化 */
+  .md-content :deep(p) {
+    margin: 1px 0 2px 0; /* 极小的段落间距 */
+    font-size: 0.7rem;
+    line-height: 1.2;
+  }
+  
+  /* 移动端标题优化 */
+  .md-content :deep(h1), 
+  .md-content :deep(h2), 
+  .md-content :deep(h3),
+  .md-content :deep(h4),
+  .md-content :deep(h5),
+  .md-content :deep(h6) {
+    font-size: 0.75rem; /* 统一较小的标题字体 */
+    margin: 2px 0; /* 大幅减少标题间距 */
+    font-weight: 600;
+  }
+  
+  /* 移动端列表优化 */
+  .md-content :deep(ul), 
+  .md-content :deep(ol) {
+    margin: 2px 0; /* 减少列表间距 */
+    padding-left: 12px; /* 减少缩进 */
+    font-size: 0.7rem;
+  }
+  
+  .md-content :deep(li) {
+    margin: 1px 0; /* 极小的列表项间距 */
+    line-height: 1.2;
+  }
+  
+  /* 移动端代码块优化 */
+  .md-content :deep(pre) {
+    padding: 4px 6px; /* 减少代码块内边距 */
+    margin: 3px 0; /* 减少代码块间距 */
+    font-size: 0.65rem; /* 更小的代码字体 */
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  
+  /* 移动端行内代码优化 */
+  .md-content :deep(code) {
+    font-size: 0.65rem; /* 更小的内联代码字体 */
+    padding: 1px 2px; /* 减少内联代码内边距 */
+    border-radius: 2px;
+  }
+  
+  /* 移动端引用块优化 */
+  .md-content :deep(blockquote) {
+    margin: 3px 0;
+    padding: 3px 6px;
+    border-left: 2px solid #ddd;
+    font-size: 0.7rem;
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 3px;
+  }
+  
+  /* 移动端数学公式优化 */
   .md-content :deep(.katex) {
-    font-size: 1em;
+    font-size: 0.65rem !important;
+  }
+  
+  .md-content :deep(.katex-display) {
+    margin: 3px 0;
+    padding: 3px;
+    font-size: 0.6rem !important;
   }
   
   .md-content :deep(.katex-display > .katex) {
-    font-size: 1.1em;
+    font-size: 0.65rem !important;
+  }
+  
+  /* 移动端表格优化 */
+  .md-content :deep(table) {
+    font-size: 0.6rem; /* 更小的表格字体 */
+    width: 100%;
+    overflow-x: auto;
+    display: block;
+    white-space: nowrap;
+  }
+  
+  .md-content :deep(th), 
+  .md-content :deep(td) {
+    padding: 2px 4px; /* 减少表格单元格内边距 */
+    font-size: 0.6rem;
+  }
+  
+  /* 移动端工具调用折叠块优化 */
+  .md-content :deep(details) {
+    margin: 3px 0;
+    font-size: 0.65rem;
+    border-radius: 4px;
+  }
+  
+  .md-content :deep(details > summary) {
+    padding: 3px 6px;
+    font-size: 0.65rem;
+    border-radius: 3px;
+  }
+  
+  .md-content :deep(details pre) {
+    font-size: 0.6rem;
+    padding: 3px 4px;
+    margin: 1px 0;
+  }
+  
+  /* 移动端标签样式优化 */
+  :deep(.inline-tag) {
+    padding: 1px 3px;
+    margin: 0 1px;
+    font-size: 0.6rem;
+    border-radius: 2px;
+    line-height: 1.1;
+    display: inline-block;
+    vertical-align: baseline;
+  }
+  
+  /* 移动端展开内容优化 */
+  :deep(.tag-expanded-content) {
+    padding: 3px 4px;
+    margin: 1px 0;
+    font-size: 0.65rem;
+    border-radius: 3px;
+    max-height: 80px; /* 限制移动端展开内容高度 */
+    overflow-y: auto;
+  }
+  
+  /* 移动端流式输出指示器优化 */
+  .streaming-indicator {
+    font-size: 0.6rem;
+  }
+  
+  .cursor {
+    font-size: 0.6rem;
+    line-height: 1.1;
   }
 }
 

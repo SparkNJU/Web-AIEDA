@@ -231,6 +231,8 @@ const handleRegister = async () => {
   align-items: center;
   background: var(--bg-primary);
   padding: 2rem;
+  padding-top: calc(2rem + 80px); /* 桌面端避开Header */
+  box-sizing: border-box;
 }
 
 .register-content {
@@ -446,6 +448,10 @@ const handleRegister = async () => {
 }
 
 @media (max-width: 768px) {
+  .register-container {
+    padding-top: calc(1rem + 60px); /* 移动端避开Header */
+  }
+  
   .register-content {
     flex-direction: column;
     margin: 1rem;

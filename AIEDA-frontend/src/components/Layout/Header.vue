@@ -1,50 +1,102 @@
 <template>
   <header class="header">
-    <div class="container">
-      <div class="header-content">
-        <div class="logo">
-          <router-link to="/">
-            <h1>ORVIX</h1>
-          </router-link>
-        </div>
-        <nav class="nav">
-          <div class="nav-item dropdown" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
-            <router-link to="/" class="nav-link">首页</router-link>
-            <div class="dropdown-menu" :class="{ 'show': showDropdown }">
-              <a href="#features" class="dropdown-item" @click="scrollToSection('features')">产品特性</a>
-              <a href="#about" class="dropdown-item" @click="scrollToSection('about')">关于我们</a>
-              <a href="#contact" class="dropdown-item" @click="scrollToSection('contact')">联系我们</a>
-            </div>
+    <div class="header-content">
+      <div class="logo">
+        <router-link to="/">
+          <h1>ORVIX</h1>
+        </router-link>
+      </div>
+      
+      <!-- 桌面端导航菜单 -->
+      <nav class="desktop-nav">
+        <div class="nav-item dropdown" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
+          <router-link to="/" class="nav-link">首页</router-link>
+          <div class="dropdown-menu" :class="{ 'show': showDropdown }">
+            <a href="#features" class="dropdown-item" @click="scrollToSection('features')">产品特性</a>
+            <a href="#about" class="dropdown-item" @click="scrollToSection('about')">关于我们</a>
+            <a href="#contact" class="dropdown-item" @click="scrollToSection('contact')">联系我们</a>
           </div>
-          <router-link to="/chat" class="nav-link">智能助手</router-link>
-        </nav>
-        <div class="auth-buttons">
-          <template v-if="!isLoggedIn">
-            <router-link to="/login">
-              <button class="login-btn">登录</button>
-            </router-link>
-            <router-link to="/register">
-              <button class="register-btn">注册</button>
-            </router-link>
-          </template>
-          <template v-else>
-            <router-link to="/Profile">
-              <button class="profile-btn">个人中心</button>
-            </router-link>
-            <button class="logout-btn" @click="handleLogout">登出</button>
-          </template>
-          <button class="theme-toggle" @click="toggleTheme">
-            <span class="theme-icon">{{ themeIcon }}</span>
-          </button>
         </div>
+        <router-link to="/chat" class="nav-link">智能助手</router-link>
+      </nav>
+      
+      <!-- 移动端汉堡菜单按钮 -->
+      <button class="mobile-menu-toggle" @click="toggleMobileMenu" :class="{ 'active': showMobileMenu }">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      
+      <!-- 桌面端认证按钮和主题切换 -->
+      <div class="auth-buttons desktop-auth">
+        <template v-if="!isLoggedIn">
+          <router-link to="/login">
+            <button class="login-btn">登录</button>
+          </router-link>
+          <router-link to="/register">
+            <button class="register-btn">注册</button>
+          </router-link>
+        </template>
+        <template v-else>
+          <router-link to="/Profile">
+            <button class="profile-btn">个人</button>
+          </router-link>
+          <button class="logout-btn" @click="handleLogout">登出</button>
+        </template>
+        <button class="theme-toggle" @click="toggleTheme">
+          <span class="theme-icon">{{ themeIcon }}</span>
+        </button>
       </div>
     </div>
+    
+    <!-- 移动端折叠菜单 -->
+    <el-menu 
+      v-show="showMobileMenu"
+      class="mobile-menu"
+      mode="horizontal"
+      :ellipsis="false"
+      background-color="var(--bg-card)"
+      text-color="var(--text-primary)"
+      active-text-color="#8b5cf6"
+    >
+      <div class="mobile-menu-content">
+        <el-menu-item index="home" @click="handleMenuClick('/')">
+          首页
+        </el-menu-item>
+        <el-menu-item index="chat" @click="handleMenuClick('/chat')">
+          Agent
+        </el-menu-item>
+        
+        <div class="mobile-auth-section">
+          <template v-if="!isLoggedIn">
+            <el-menu-item index="login" @click="handleMenuClick('/login')">
+              登录
+            </el-menu-item>
+            <el-menu-item index="register" @click="handleMenuClick('/register')">
+              注册
+            </el-menu-item>
+          </template>
+          <template v-else>
+            <el-menu-item index="profile" @click="handleMenuClick('/Profile')">
+              个人中心
+            </el-menu-item>
+            <el-menu-item index="logout" @click="handleLogout">
+              登出
+            </el-menu-item>
+          </template>
+          <el-menu-item index="theme" @click="toggleTheme">
+            {{ themeText }}
+          </el-menu-item>
+        </div>
+      </div>
+    </el-menu>
   </header>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { ElMenu, ElMenuItem } from 'element-plus';
 
 const router = useRouter();
 const route = useRoute();
@@ -55,6 +107,9 @@ const username = ref('');
 
 // 下拉菜单状态
 const showDropdown = ref(false);
+
+// 移动端菜单状态
+const showMobileMenu = ref(false);
 
 // 主题相关状态
 const themeIcon = ref('🌙');
@@ -96,6 +151,31 @@ const scrollToSection = (sectionId: string) => {
     }
   }
   showDropdown.value = false;
+  showMobileMenu.value = false; // 移动端滚动后关闭菜单
+};
+
+// 切换移动端菜单
+const toggleMobileMenu = () => {
+  showMobileMenu.value = !showMobileMenu.value;
+};
+
+// 处理移动端菜单点击
+const handleMenuClick = (path: string) => {
+  router.push(path);
+  showMobileMenu.value = false;
+};
+
+// 点击外部关闭移动端菜单
+const handleClickOutside = (event: Event) => {
+  const target = event.target as HTMLElement;
+  const nav = document.querySelector('.nav');
+  const toggle = document.querySelector('.mobile-menu-toggle');
+  
+  // 如果点击的不是菜单内容，也不是切换按钮，则关闭菜单
+  if (showMobileMenu.value && nav && toggle && 
+      !nav.contains(target) && !toggle.contains(target)) {
+    showMobileMenu.value = false;
+  }
 };
 
 // 主题切换
@@ -135,6 +215,14 @@ const initTheme = () => {
 onMounted(() => {
   checkLoginStatus();
   initTheme();
+  
+  // 添加点击外部关闭菜单的监听器
+  document.addEventListener('click', handleClickOutside);
+});
+
+// 组件卸载时清理事件监听器
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
 });
 
 // 监听路由变化，更新登录状态
@@ -178,18 +266,14 @@ watch(
   left: 0;
   right: 0;
   z-index: 1000;
-  padding: 15px 0;
+  padding: 15px 20px; /* 直接在header上设置padding */
   transition: all 0.3s ease;
   border-bottom: 1px solid var(--border-color);
 }
 
-.container {
+.header-content { /* 移除.container，直接使用header-content */
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 20px;
-}
-
-.header-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -210,7 +294,7 @@ watch(
   text-decoration: none;
 }
 
-.nav {
+.desktop-nav {
   display: flex;
   align-items: center;
   gap: 30px;
@@ -253,6 +337,44 @@ watch(
 .nav-link:hover::after,
 .nav-link.router-link-active::after {
   width: 80%;
+}
+
+/* 移动端菜单样式 */
+.mobile-menu {
+  background: var(--bg-card) !important;
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
+  animation: slideDown 0.3s ease;
+}
+
+.mobile-menu-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.mobile-auth-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Dropdown Menu */
@@ -387,28 +509,123 @@ watch(
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .header {
+    padding: 8px 20px; /* 移动端减小padding */
+  }
+  
   .header-content {
+    position: relative;
+  }
+  
+  /* 移动端logo更小 */
+  .logo h1 {
+    font-size: 1.2rem;
+    margin: 0;
+  }
+  
+  /* 隐藏桌面端导航 */
+  .desktop-nav {
+    display: none;
+  }
+  
+  /* 隐藏桌面端认证按钮 */
+  .desktop-auth {
+    display: none;
+  }
+  
+  /* 显示汉堡菜单按钮 */
+  .mobile-menu-toggle {
+    display: flex;
     flex-direction: column;
-    gap: 15px;
+    justify-content: space-around;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    z-index: 1001;
+    position: relative;
   }
   
-  .nav {
-    flex-direction: column;
-    gap: 15px;
-  }
-  
-  .auth-buttons {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-  
-  .dropdown-menu {
-    position: static;
-    opacity: 1;
-    visibility: visible;
-    transform: none;
-    margin-top: 10px;
+  .mobile-menu-toggle span {
     width: 100%;
+    height: 2px;
+    background: var(--text-primary);
+    border-radius: 2px;
+    transition: all 0.3s ease;
+    transform-origin: center;
+  }
+  
+  .mobile-menu-toggle.active span:first-child {
+    transform: rotate(45deg) translate(0, 7px);
+  }
+  
+  .mobile-menu-toggle.active span:nth-child(2) {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  
+  .mobile-menu-toggle.active span:nth-child(3) {
+    transform: rotate(-45deg) translate(0, -7px);
+  }
+  
+  /* 移动端菜单项样式覆盖 */
+  .mobile-menu :deep(.el-menu-item) {
+    padding: 8px 12px !important;
+    margin: 0 4px !important;
+    border-radius: 6px !important;
+    border: 1px solid var(--border-color) !important;
+    background: var(--bg-secondary) !important;
+    font-size: 0.8rem !important;
+    transition: all 0.3s ease !important;
+    min-height: auto !important;
+    height: auto !important;
+    line-height: 1.4 !important;
+  }
+  
+  .mobile-menu :deep(.el-menu-item:hover) {
+    background: rgba(139, 92, 246, 0.1) !important;
+    border-color: rgba(139, 92, 246, 0.3) !important;
+    color: #8b5cf6 !important;
+  }
+  
+  .mobile-menu :deep(.el-menu-item.is-active) {
+    background: rgba(139, 92, 246, 0.2) !important;
+    border-color: #8b5cf6 !important;
+    color: #8b5cf6 !important;
+  }
+  
+  /* 移动端菜单内容适配小屏幕 */
+  .mobile-menu-content {
+    padding: 8px 16px;
+    gap: 8px;
+  }
+  
+  .mobile-auth-section {
+    gap: 4px;
+    margin-left: 8px;
+  }
+}
+
+/* 桌面端隐藏汉堡菜单和移动端菜单 */
+@media (min-width: 769px) {
+  .mobile-menu-toggle {
+    display: none;
+  }
+  
+  .mobile-menu {
+    display: none !important;
+  }
+  
+  .desktop-nav {
+    display: flex;
+  }
+  
+  .desktop-auth {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 }
 
@@ -478,10 +695,5 @@ watch(
 [data-theme="dark"] .theme-toggle:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #ffffff;
-}
-
-/* 为body添加padding避免header遮挡 */
-:global(body) {
-  padding-top: 80px;
 }
 </style>

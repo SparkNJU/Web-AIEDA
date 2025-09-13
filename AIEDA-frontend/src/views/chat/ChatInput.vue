@@ -831,26 +831,65 @@ const handleConfigSaved = async (configData: LLMConfigData | null) => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .input-row {
-    gap: 6px;
+  /* 移动端输入区域整体优化 */
+  .chat-input {
+    padding: 8px 12px; /* 减少内边距 */
   }
   
+  /* 移动端输入行优化 */
+  .input-row {
+    gap: 4px; /* 减少间距 */
+  }
+  
+  /* 移动端控制行优化 */
   .control-row {
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 4px; /* 减少间距 */
+    padding: 4px 0; /* 减少内边距 */
   }
   
+  /* 移动端代理选择器优化 */
   .agent-selector {
-    width: 120px;
+    width: 100px; /* 减少宽度 */
+    font-size: 0.8rem; /* 减小字体 */
   }
   
+  /* 移动端输入框优化 */
+  .input-container :deep(.el-textarea__inner) {
+    font-size: 0.9rem; /* 减小输入字体 */
+    padding: 8px; /* 减少内边距 */
+    line-height: 1.4; /* 调整行高 */
+  }
+  
+  /* 移动端按钮优化 */
+  .send-button, .file-button, .llm-config-button {
+    padding: 6px; /* 减少按钮内边距 */
+    font-size: 0.8rem; /* 减小按钮字体 */
+  }
+  
+  /* 移动端文件轮播优化 */
   .files-carousel {
     flex-direction: column;
+    gap: 4px; /* 减少间距 */
   }
   
+  /* 移动端文件附件项优化 */
   .file-attachment-item {
     min-width: auto;
     max-width: none;
+    padding: 4px 8px; /* 减少内边距 */
+    font-size: 0.7rem; /* 减小字体 */
+  }
+  
+  /* 移动端文件信息优化 */
+  .file-info h4 {
+    font-size: 0.8rem; /* 减小标题字体 */
+    margin: 2px 0; /* 减少间距 */
+  }
+  
+  .file-info p {
+    font-size: 0.7rem; /* 减小描述字体 */
+    margin: 1px 0; /* 减少间距 */
   }
 }
 </style>

@@ -1083,7 +1083,41 @@ const scrollToBottom = () => {
 /* 移动端适配 */
 @media (max-width: 768px) {
   .chat-container {
-    padding-top: 120px; /* 移动端Header更高 */
+    padding-top: 60px; /* 移动端Header更紧凑 */
+  }
+  
+  .chat-layout {
+    position: relative; /* 为绝对定位的侧边栏提供参考 */
+  }
+  
+  .chat-main {
+    width: 100% !important; /* 移动端聊天主区域占满屏幕 */
+    margin-left: 0 !important; /* 移除左边距 */
+  }
+  
+  .chat-main-header {
+    padding: 8px 12px; /* 减少header内边距 */
+  }
+  
+  .chat-main-header h2 {
+    font-size: 1rem; /* 减小标题字体 */
+  }
+  
+  .chat-main-content {
+    width: 100% !important; /* 移动端内容区域占满宽度 */
+    margin: 0 !important; /* 移除居中边距 */
+    padding: 0 4px; /* 添加小的侧边距 */
+  }
+  
+  /* 移动端文件预览处理 */
+  .chat-main.with-preview {
+    width: 100% !important;
+  }
+  
+  .chat-main.with-preview .chat-main-content {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 2px; /* 有文件预览时更小的边距 */
   }
 }
 

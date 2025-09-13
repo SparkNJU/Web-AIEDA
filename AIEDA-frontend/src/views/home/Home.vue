@@ -302,6 +302,8 @@ onUnmounted(() => {
   overflow-x: hidden;
   transition: all 0.3s ease;
   min-height: 100vh;
+  padding-top: 80px; /* 桌面端避开Header */
+  box-sizing: border-box;
 }
 
 .container {
@@ -800,6 +802,10 @@ footer {
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .home {
+    padding-top: 60px; /* 移动端避开Header */
+  }
+  
   .hero-content {
     grid-template-columns: 1fr;
     gap: 40px;

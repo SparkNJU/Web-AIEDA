@@ -1,6 +1,6 @@
 <!-- ChatAside.vue -->
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { ElButton, ElIcon, ElScrollbar } from 'element-plus'
 import { Plus, Operation } from '@element-plus/icons-vue'
 import SessionItem from './SessionItem.vue'
@@ -22,7 +22,38 @@ const emit = defineEmits<{
   'delete-session': [sessionId: number]
 }>()
 
-const sidebarOpen = ref(true)
+const sidebarOpen = ref(false) // 默认收起
+
+// 响应式检测屏幕大小
+const isMobile = ref(window.innerWidth <= 768)
+
+// 监听窗口大小变化
+const handleResize = () => {
+  const wasMobile = isMobile.value
+  isMobile.value = window.innerWidth <= 768
+  
+  // 当从桌面端切换到移动端时，强制收起侧边栏
+  if (!wasMobile && isMobile.value) {
+    sidebarOpen.value = false
+  }
+  // 当从移动端切换到桌面端时，展开侧边栏
+  else if (wasMobile && !isMobile.value) {
+    sidebarOpen.value = true
+  }
+}
+
+// 挂载时初始化
+onMounted(() => {
+  isMobile.value = window.innerWidth <= 768
+  // 初始状态：移动端收起，桌面端展开
+  sidebarOpen.value = !isMobile.value
+  window.addEventListener('resize', handleResize)
+})
+
+// 卸载时清理事件监听器
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
 
 // 监听强制收起状态
 watch(() => props.forceCollapsed, (newValue: boolean | undefined) => {
@@ -148,5 +179,89 @@ watch(() => props.forceCollapsed, (newValue: boolean | undefined) => {
 .session-dot.active {
   background-color: rgb(102, 8, 116);
   transform: scale(1.3);
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .chat-aside {
+    width: 140px; /* 移动端展开时更小 */
+    position: absolute; /* 改为绝对定位，覆盖聊天区域 */
+    left: 0;
+    top: 0;
+    z-index: 1000;
+    background: var(--chat-bg-sidebar);
+    backdrop-filter: blur(10px);
+    border-right: 1px solid var(--chat-border);
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    transform: translateX(-100%); /* 默认隐藏 */
+    transition: transform 0.3s ease;
+  }
+  
+  .chat-aside:not(.collapsed) {
+    transform: translateX(0); /* 展开时显示 */
+  }
+  
+  .chat-aside.collapsed {
+    width: 32px; /* 移动端收起时更小 */
+    transform: translateX(0); /* 收起状态始终显示 */
+    background: var(--chat-bg-sidebar);
+    backdrop-filter: blur(5px);
+  }
+  
+  .chat-aside-header {
+    padding: 8px; /* 移动端大幅减少内边距 */
+    min-height: 48px;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .chat-aside-header .el-button:not(.sidebar-toggle) {
+    font-size: 0.7rem; /* 移动端按钮字体更小 */
+    padding: 4px 8px; /* 移动端按钮内边距更小 */
+    height: 28px;
+    min-height: 28px;
+  }
+  
+  .sidebar-toggle {
+    min-width: 24px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    position: absolute;
+    top: 8px;
+    right: 4px;
+  }
+  
+  .chat-sessions {
+    height: calc(100% - 60px); /* 移动端调整高度 */
+    padding: 0 4px; /* 增加侧边内边距 */
+  }
+  
+  .session-list {
+    padding: 4px 0; /* 移动端减少会话列表内边距 */
+  }
+  
+  .session-list-collapsed {
+    padding: 4px 2px; /* 移动端减少内边距 */
+    gap: 4px; /* 移动端减少间距 */
+  }
+  
+  .session-dot {
+    width: 8px; /* 移动端圆点更小 */
+    height: 8px;
+  }
+  
+  /* 移动端遮罩层 - 展开时添加背景遮罩 */
+  .chat-aside:not(.collapsed)::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 140px;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: -1;
+    pointer-events: auto;
+  }
 }
 </style>

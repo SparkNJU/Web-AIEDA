@@ -253,6 +253,8 @@ onMounted(() => {
 .profile-container {
   min-height: 100vh;
   background-color: rgba(102, 8, 116, 0.05);
+  padding-top: 80px; /* 桌面端避开Header */
+  box-sizing: border-box;
 }
 
 .profile-content {
@@ -430,5 +432,16 @@ onMounted(() => {
 
 .cancel-button:hover {
   background-color: #e9ecef;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .profile-container {
+    padding-top: 60px; /* 移动端避开Header */
+  }
+  
+  .profile-content {
+    padding: 1rem;
+  }
 }
 </style>

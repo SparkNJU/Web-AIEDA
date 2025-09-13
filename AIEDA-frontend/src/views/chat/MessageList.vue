@@ -142,14 +142,34 @@ const handleUserConfirmation = (choice: '1' | '2') => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  /* 移动端用户消息占更多空间 */
+  /* 移动端消息列表整体优化 */
+  .chat-messages {
+    padding: 4px 8px; /* 大幅减少内边距 */
+    font-size: 0.8rem; /* 整体字体缩小 */
+  }
+  
+  /* 移动端消息行间距优化 */
+  .message-row { 
+    margin: 2px 0; /* 大幅减少消息间距 */
+  }
+  
+  /* 移动端用户消息占更多空间但留出边距 */
   .message-row[justify="end"] .message-col {
     width: 85% !important; /* 用户消息在移动端占85% */
   }
   
   /* 移动端AI消息占更多空间 */
-  .message-row[justify="center"] .message-col {
-    width: 95% !important; /* AI消息在移动端占95% */
+  .message-row[justify="start"] .message-col {
+    width: 92% !important; /* AI消息在移动端占92% */
+  }
+  
+  /* 有文件预览时的移动端优化 */
+  .chat-messages.with-file-preview .message-row[justify="end"] .message-col {
+    width: 80% !important; /* 文件预览时用户消息占80% */
+  }
+  
+  .chat-messages.with-file-preview .message-row[justify="start"] .message-col {
+    width: 90% !important; /* AI消息占90% */
   }
 }
 </style>
