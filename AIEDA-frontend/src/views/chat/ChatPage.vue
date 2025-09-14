@@ -1174,6 +1174,7 @@ const scrollToBottom = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  color: var(--chat-text-primary) !important;
 }
 
 .header-actions {
@@ -1183,7 +1184,7 @@ const scrollToBottom = () => {
 
 .chat-main-header h2 {
   margin: 0;
-  color: var(--chat-primary);
+  color: var(--chat-text-primary) !important;
   font-size: 1.2rem;
   font-weight: 500;
   white-space: nowrap;

@@ -80,14 +80,14 @@ const { suggestions, hasFiles } = props
 }
 
 .welcome-content h2 {
-  color: var(--chat-primary);
+  color: var(--chat-text-primary) !important;
   font-size: 1.8rem;
   margin-bottom: 0.8rem;
   font-weight: 500;
 }
 
 .welcome-content p {
-  color: var(--chat-text-secondary);
+  color: var(--chat-text-secondary) !important;
   font-size: 1rem;
   margin-bottom: 1.5rem;
   line-height: 1.6;
@@ -100,7 +100,7 @@ const { suggestions, hasFiles } = props
 }
 
 .suggestions h3 {
-  color: var(--chat-primary);
+  color: var(--chat-text-primary) !important;
   margin-bottom: 1rem;
   font-size: 1.1rem;
   font-weight: 500;
@@ -121,6 +121,7 @@ const { suggestions, hasFiles } = props
   margin-bottom: 0.8rem;
   border-radius: 8px;
   background-color: transparent;
+  color: var(--chat-text-secondary) !important;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
@@ -137,7 +138,7 @@ const { suggestions, hasFiles } = props
 /* 移除Element Plus默认样式 */
 .suggestion-menu .el-menu-item.is-active {
   background-color: var(--chat-primary-light) !important;
-  color: var(--chat-primary) !important;
+  color: var(--chat-text-primary) !important;
 }
 
 /* 响应式设计 */

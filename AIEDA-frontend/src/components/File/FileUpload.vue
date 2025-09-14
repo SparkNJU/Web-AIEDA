@@ -775,44 +775,4 @@ defineExpose({
     justify-content: flex-end;
   }
 }
-
-/* 夜间模式样式 */
-[data-theme="dark"] .upload-status {
-  background-color: rgba(102, 8, 163, 0.2);
-  color: rgba(102, 8, 163, 0.9);
-}
-
-[data-theme="dark"] .uploaded-files {
-  background-color: rgba(30, 30, 30, 0.8);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-[data-theme="dark"] .files-header {
-  background-color: rgba(20, 20, 20, 0.9);
-  border-bottom-color: rgba(255, 255, 255, 0.1);
-}
-
-[data-theme="dark"] .files-count {
-  color: #ffffff;
-}
-
-[data-theme="dark"] .file-item {
-  border-bottom-color: rgba(255, 255, 255, 0.1);
-}
-
-[data-theme="dark"] .file-item:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-}
-
-[data-theme="dark"] .file-name {
-  color: #ffffff;
-}
-
-[data-theme="dark"] .file-size {
-  color: #cbd5e1;
-}
-
-[data-theme="dark"] .upload-hint {
-  color: #94a3b8;
-}
 </style>

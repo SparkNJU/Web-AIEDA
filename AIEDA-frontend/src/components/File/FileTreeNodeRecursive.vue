@@ -252,42 +252,4 @@ const downloadFile = async () => {
 .download-btn .el-icon {
   font-size: 12px;
 }
-
-/* 夜间模式样式 */
-[data-theme="dark"] .folder-header {
-  color: #ffffff;
-}
-
-[data-theme="dark"] .folder-icon {
-  color: #cbd5e1;
-}
-
-[data-theme="dark"] .item-count {
-  color: #94a3b8;
-}
-
-[data-theme="dark"] .folder-children {
-  border-left-color: #4a5568;
-}
-
-[data-theme="dark"] .file-node {
-  background-color: transparent;
-}
-
-[data-theme="dark"] .file-node:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-}
-
-[data-theme="dark"] .file-node.active {
-  background-color: rgba(102, 8, 163, 0.2);
-  border-color: rgba(102, 8, 163, 0.5);
-}
-
-[data-theme="dark"] .file-icon {
-  color: #cbd5e1;
-}
-
-[data-theme="dark"] .file-name {
-  color: #ffffff;
-}
 </style>
