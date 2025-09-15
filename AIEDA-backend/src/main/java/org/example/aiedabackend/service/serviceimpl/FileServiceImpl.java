@@ -176,7 +176,12 @@ public class FileServiceImpl implements FileService {
                 previewVO.setFileSize(0L);
             }
             
-            previewVO.setContentType((String) responseBody.get("content_type"));
+            // 安全地设置contentType，如果无效则默认为text/plain
+            String contentType = (String) responseBody.get("content_type");
+            if (contentType == null || !contentType.contains("/")) {
+                contentType = "text/plain";
+            }
+            previewVO.setContentType(contentType);
             previewVO.setPreviewContent((String) responseBody.get("preview_content"));
             
             // 安全地转换截断标志

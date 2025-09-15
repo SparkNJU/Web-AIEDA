@@ -238,10 +238,79 @@ public class ChatServiceImpl implements ChatService {
             sseLastActivityMap.remove(emitter);
             
             emitter.complete();
-            log.info("[{}] � SSE连接已关闭 - 原因: {}", getCurrentTimestamp(), reason);
+            log.info("[{}] 🔌 SSE连接已关闭 - 原因: {}", getCurrentTimestamp(), reason);
         } catch (Exception e) {
             log.error("[{}] ❌ 关闭SSE连接失败 - 原因: {}", getCurrentTimestamp(), reason, e);
         }
+    }
+
+    /**
+     * 关闭并完全清理SSE连接（新增方法）
+     * 与closeSseConnection的区别：这个方法确保完全清理，避免连接泄漏
+     */
+    private void closeAndCleanupSseConnection(SseEmitter emitter, String reason) {
+        if (emitter == null) {
+            log.debug("[{}] 🔄 尝试清理空的SSE连接，跳过处理", getCurrentTimestamp());
+            return;
+        }
+        
+        log.info("[{}] 🧽 完全清理SSE连接: {}", getCurrentTimestamp(), reason);
+        
+        try {
+            // 找到对应的会话ID
+            Integer sidToRemove = null;
+            for (java.util.Map.Entry<Integer, SseEmitter> entry : sessionSseMap.entrySet()) {
+                if (entry.getValue() == emitter) { // 使用 == 而不是 equals 来检查引用
+                    sidToRemove = entry.getKey();
+                    break;
+                }
+            }
+            
+            if (sidToRemove != null) {
+                log.info("[{}] 🎯 找到要清理的会话ID: {}", getCurrentTimestamp(), sidToRemove);
+                
+                // 停止该会话的超时监控任务
+                java.util.concurrent.ScheduledFuture<?> timeoutTask = sessionTimeoutTasks.remove(sidToRemove);
+                if (timeoutTask != null) {
+                    timeoutTask.cancel(true); // 使用强制取消
+                    log.debug("[{}] ⏰ 已强制停止会话 {} 的超时监控任务", getCurrentTimestamp(), sidToRemove);
+                }
+                
+                // 从会话映射中移除
+                sessionSseMap.remove(sidToRemove);
+                log.info("[{}] 🧹 已从会话映射中移除SSE连接，会话ID: {}", getCurrentTimestamp(), sidToRemove);
+            } else {
+                log.warn("[{}] ⚠️ 未在会话映射中找到要清理的SSE连接", getCurrentTimestamp());
+            }
+            
+            // 从活跃连接映射中移除
+            sseLastActivityMap.remove(emitter);
+            log.debug("[{}] 🧹 已从活跃连接映射中移除SSE连接", getCurrentTimestamp());
+            
+            // 先尝试正常完成连接
+            try {
+                emitter.complete();
+                log.info("[{}] ✅ SSE连接已正常完成并清理", getCurrentTimestamp());
+            } catch (IllegalStateException e) {
+                if (e.getMessage() != null && e.getMessage().contains("ResponseBodyEmitter has already completed")) {
+                    log.debug("[{}] 📝 SSE连接已经完成，跳过重复完成操作", getCurrentTimestamp());
+                } else {
+                    log.warn("[{}] ⚠️ 完成SSE连接时状态异常: {}", getCurrentTimestamp(), e.getMessage());
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("[{}] ❌ 清理SSE连接过程中发生异常: {}", getCurrentTimestamp(), e.getMessage());
+            try {
+                // 如果正常清理失败，尝试强制清理
+                emitter.completeWithError(new RuntimeException("连接强制关闭: " + reason));
+                log.warn("[{}] ⚠️ 已强制关闭SSE连接", getCurrentTimestamp());
+            } catch (Exception ee) {
+                log.error("[{}] ❌ 强制关闭SSE连接也失败: {}", getCurrentTimestamp(), ee.getMessage());
+            }
+        }
+        
+        log.info("[{}] ✨ SSE连接完全清理完成", getCurrentTimestamp());
     }
 
     /**
@@ -530,8 +599,22 @@ public class ChatServiceImpl implements ChatService {
         // 检查是否已有该会话的SSE连接
         SseEmitter existingEmitter = sessionSseMap.get(sid);
         if (existingEmitter != null) {
-            log.info("[{}] ♻️  复用会话 {} 的现有SSE连接", getCurrentTimestamp(), sid);
-            return existingEmitter;
+            // 验证现有连接是否仍然有效
+            try {
+                // 尝试检查连接状态
+                if (isEmitterActive(existingEmitter)) {
+                    log.info("[{}] ♻️ 复用会话 {} 的现有SSE连接", getCurrentTimestamp(), sid);
+                    return existingEmitter;
+                } else {
+                    log.warn("[{}] ⚠️ 会话 {} 的现有SSE连接无效，将创建新连接", getCurrentTimestamp(), sid);
+                    // 清理无效的连接
+                    closeAndCleanupSseConnection(existingEmitter, "连接无效，清理后重新创建");
+                }
+            } catch (Exception e) {
+                log.warn("[{}] ⚠️ 检查会话 {} 的SSE连接时出错，将创建新连接: {}", getCurrentTimestamp(), sid, e.getMessage());
+                // 清理有问题的连接
+                closeAndCleanupSseConnection(existingEmitter, "连接检查异常，清理后重新创建");
+            }
         }
 
         // 创建新的会话级SSE连接
@@ -933,7 +1016,8 @@ public class ChatServiceImpl implements ChatService {
                 getCurrentTimestamp(), accumulated.length());
             fullDelta.setLength(0);
             // 简单过滤finish标签后直接返回
-            String filteredContent = accumulated.replaceAll("(?i)</?finish>", "");
+//            String filteredContent = accumulated.replaceAll("(?i)</?finish>", "");
+            String filteredContent = accumulated;
             log.info("[{}] 🔄 强制输出内容 - 长度: {}", getCurrentTimestamp(), filteredContent.length());
             return filteredContent;
         }
@@ -1039,6 +1123,65 @@ public class ChatServiceImpl implements ChatService {
     }
 
     /**
+     * 通用的SSE强制刷新函数
+     * 确保数据立即发送到前端，不被服务器缓冲区阻塞
+     */
+    private void forceFlushSseEmitter(SseEmitter emitter) {
+        try {
+            // 方法1：通过反射访问底层handler进行强制刷新
+            java.lang.reflect.Field handlerField = emitter.getClass().getDeclaredField("handler");
+            handlerField.setAccessible(true);
+            Object handler = handlerField.get(emitter);
+            
+            if (handler != null) {
+                // 尝试调用flush方法
+                try {
+                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
+                    flushMethod.invoke(handler);
+                    log.debug("[{}] ✅ SSE缓冲区强制刷新成功（handler.flush）", getCurrentTimestamp());
+                    return;
+                } catch (Exception e1) {
+                    log.debug("[{}] 📝 handler.flush方法失败，尝试其他方式: {}", getCurrentTimestamp(), e1.getMessage());
+                }
+                
+                // 方法2：尝试获取response对象并刷新
+                try {
+                    java.lang.reflect.Field responseField = handler.getClass().getDeclaredField("response");
+                    if (responseField != null) {
+                        responseField.setAccessible(true);
+                        Object response = responseField.get(handler);
+                        if (response != null) {
+                            java.lang.reflect.Method flushBufferMethod = response.getClass().getMethod("flushBuffer");
+                            flushBufferMethod.invoke(response);
+                            log.debug("[{}] ✅ SSE缓冲区强制刷新成功（response.flushBuffer）", getCurrentTimestamp());
+                            return;
+                        }
+                    }
+                } catch (Exception e2) {
+                    log.debug("[{}] 📝 response.flushBuffer方法失败: {}", getCurrentTimestamp(), e2.getMessage());
+                }
+            }
+            
+            // 方法3：通过HTTP响应对象刷新（如果可用）
+            HttpServletResponse response = getCurrentHttpResponse();
+            if (response != null) {
+                try {
+                    response.flushBuffer();
+                    log.debug("[{}] ✅ SSE缓冲区强制刷新成功（HttpServletResponse.flushBuffer）", getCurrentTimestamp());
+                    return;
+                } catch (Exception e3) {
+                    log.debug("[{}] 📝 HttpServletResponse.flushBuffer失败: {}", getCurrentTimestamp(), e3.getMessage());
+                }
+            }
+            
+            log.debug("[{}] ⚠️ 所有SSE刷新方法均失败，消息可能被缓冲", getCurrentTimestamp());
+            
+        } catch (Exception e) {
+            log.debug("[{}] ❌ SSE强制刷新过程中发生异常: {}", getCurrentTimestamp(), e.getMessage());
+        }
+    }
+
+    /**
      * 发送错误信息到前端
      */
     private void sendErrorToFrontend(SseEmitter emitter, String errorMessage) {
@@ -1051,18 +1194,8 @@ public class ChatServiceImpl implements ChatService {
                 .data(errorJson)
                 .reconnectTime(3000));
                 
-            // 强制刷新，确保数据立即发送
-            try {
-                java.lang.reflect.Field field = emitter.getClass().getDeclaredField("handler");
-                field.setAccessible(true);
-                Object handler = field.get(emitter);
-                if (handler != null) {
-                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
-                    flushMethod.invoke(handler);
-                }
-            } catch (Exception flushEx) {
-                log.debug("[{}] 无法强制刷新SSE缓冲区: {}", getCurrentTimestamp(), flushEx.getMessage());
-            }
+            // 使用通用的强制刷新函数
+            forceFlushSseEmitter(emitter);
             
         } catch (Exception e) {
             log.error("发送错误消息失败", e);
@@ -1091,18 +1224,8 @@ public class ChatServiceImpl implements ChatService {
                 .data(messageJson)
                 .reconnectTime(3000));
                 
-            // 强制刷新，确保数据立即发送
-            try {
-                java.lang.reflect.Field field = emitter.getClass().getDeclaredField("handler");
-                field.setAccessible(true);
-                Object handler = field.get(emitter);
-                if (handler != null) {
-                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
-                    flushMethod.invoke(handler);
-                }
-            } catch (Exception flushEx) {
-                log.debug("[{}] 无法强制刷新SSE缓冲区: {}", getCurrentTimestamp(), flushEx.getMessage());
-            }
+            // 使用通用的强制刷新函数
+            forceFlushSseEmitter(emitter);
             
         } catch (Exception e) {
             log.error("发送消息失败", e);
@@ -1139,21 +1262,8 @@ public class ChatServiceImpl implements ChatService {
                 .data(deltaJson)
                 .reconnectTime(3000));  // 添加重连时间，提高稳定性
             
-            // 强制刷新，确保数据立即发送（重要：解决服务器环境缓冲问题）
-            try {
-                // 通过反射访问响应对象进行强制刷新
-                java.lang.reflect.Field field = emitter.getClass().getDeclaredField("handler");
-                field.setAccessible(true);
-                Object handler = field.get(emitter);
-                if (handler != null) {
-                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
-                    flushMethod.invoke(handler);
-                    log.debug("[{}] 🔄 强制刷新SSE缓冲区成功", getCurrentTimestamp());
-                }
-            } catch (Exception flushEx) {
-                // 刷新失败不影响主流程，只记录debug日志
-                log.debug("[{}] 📝 无法强制刷新SSE缓冲区: {}", getCurrentTimestamp(), flushEx.getMessage());
-            }
+            // 使用通用的强制刷新函数（关键：立即发送到前端）
+            forceFlushSseEmitter(emitter);
             
             // 更新SSE活跃时间
             updateSseActivity(emitter);
@@ -1193,23 +1303,13 @@ public class ChatServiceImpl implements ChatService {
                 .data(completeJson)
                 .reconnectTime(3000));
                 
-            // 强制刷新，确保数据立即发送
-            try {
-                java.lang.reflect.Field field = emitter.getClass().getDeclaredField("handler");
-                field.setAccessible(true);
-                Object handler = field.get(emitter);
-                if (handler != null) {
-                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
-                    flushMethod.invoke(handler);
-                }
-            } catch (Exception flushEx) {
-                log.debug("[{}] 无法强制刷新SSE缓冲区: {}", getCurrentTimestamp(), flushEx.getMessage());
-            }
-            
-            // 更新SSE活跃时间
-            updateSseActivity(emitter);
+            // 使用通用的强制刷新函数
+            forceFlushSseEmitter(emitter);
             
             log.info("[{}] complete事件已成功发送，recordId: {}", getCurrentTimestamp(), recordId);
+            
+            // 🔥 关键修复：发送完成信号后立即关闭SSE连接
+            closeAndCleanupSseConnection(emitter, "回复完成，正常关闭连接");
             
         } catch (IllegalStateException e) {
             if (e.getMessage() != null && e.getMessage().contains("ResponseBodyEmitter has already completed")) {
@@ -1218,8 +1318,12 @@ public class ChatServiceImpl implements ChatService {
                 log.warn("[{}] SSE连接状态异常，跳过发送完成信号 - 错误: {}, recordId={}", 
                     getCurrentTimestamp(), e.getMessage(), recordId);
             }
+            // 连接异常时也要清理
+            closeAndCleanupSseConnection(emitter, "连接异常，强制清理");
         } catch (Exception e) {
             log.error("[{}] 发送完成信号失败，recordId: {}", getCurrentTimestamp(), recordId, e);
+            // 发送失败时也要清理连接
+            closeAndCleanupSseConnection(emitter, "发送失败，强制清理");
         }
     }
 
@@ -1236,8 +1340,13 @@ public class ChatServiceImpl implements ChatService {
 
             // 发送错误信息到前端  
             sendErrorToFrontend(emitter, e.getMessage());
+            
+            // 🔥 关键修复：错误处理后也要清理SSE连接
+            closeAndCleanupSseConnection(emitter, "处理错误后清理连接");
         } catch (Exception sendError) {
             log.error("处理错误失败", sendError);
+            // 即使处理错误失败，也要尝试清理连接
+            closeAndCleanupSseConnection(emitter, "错误处理失败，强制清理连接");
         }
     }
 
