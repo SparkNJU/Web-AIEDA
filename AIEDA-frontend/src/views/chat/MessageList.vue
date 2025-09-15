@@ -52,6 +52,7 @@ const handleUserConfirmation = (choice: '1' | '2') => {
           :is-user="msg.direction"
           :is-streaming="msg.isStreaming"
           :is-error="msg.isError"
+          :is-paused="msg.isPaused"
           :record-id="msg.rid"
           :attached-files="msg.attachedFiles"
           :uid="props.uid"

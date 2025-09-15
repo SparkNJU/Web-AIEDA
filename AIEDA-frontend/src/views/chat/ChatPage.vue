@@ -31,6 +31,7 @@ export type ChatRecord = {
   createTime?: string
   isStreaming?: boolean // 是否正在流式输出
   isError?: boolean // 是否为错误消息
+  isPaused?: boolean // 是否处于暂停状态
   agentType?: string // Agent类型
   inputType?: string // 输入类型，config类型的消息不显示
   attachedFiles?: FileVO[] // 新增：附件文件列表（用于刚发送的消息）
@@ -366,6 +367,59 @@ const handleUserConfirmation = async (choice: '1' | '2') => {
   }
 }
 
+// 处理暂停流式输出
+const handlePauseStreaming = () => {
+  const sessionId = currentSessionId.value
+  const sessionState = sessionStates.value[sessionId]
+  
+  if (!sessionState) {
+    return
+  }
+  
+  // 找到当前正在流式输出的AI消息并设置为暂停状态
+  const streamingMessageIndex = sessionState.messages.findIndex(msg => 
+    !msg.direction && (msg.isStreaming || msg.isPaused)
+  )
+  
+  if (streamingMessageIndex !== -1) {
+    const message = sessionState.messages[streamingMessageIndex]
+    
+    // 更新消息状态：保持流式状态但标记为暂停
+    sessionState.messages[streamingMessageIndex] = {
+      ...message,
+      isPaused: true,
+      isStreaming: true, // 保持流式状态
+      _updateTimestamp: Date.now() // 强制更新UI
+    }
+  }
+}
+
+// 处理恢复流式输出（清除暂停状态）
+const handleResumeStreaming = () => {
+  const sessionId = currentSessionId.value
+  const sessionState = sessionStates.value[sessionId]
+  
+  if (!sessionState) {
+    return
+  }
+  
+  // 找到当前暂停的AI消息并清除暂停状态
+  const pausedMessageIndex = sessionState.messages.findIndex(msg => 
+    !msg.direction && msg.isPaused
+  )
+  
+  if (pausedMessageIndex !== -1) {
+    const message = sessionState.messages[pausedMessageIndex]
+    
+    // 清除暂停状态，恢复到正常流式输出
+    sessionState.messages[pausedMessageIndex] = {
+      ...message,
+      isPaused: false,
+      _updateTimestamp: Date.now() // 强制更新UI
+    }
+  }
+}
+
 // 消息发送
 const handleSendMessage = async (messageToSend: string, agentType: AgentType, inputType: InputType, files?: FileVO[]) => {
   console.log('接收到发送消息事件:', { messageToSend, agentType, inputType, files })
@@ -389,6 +443,21 @@ const handleSendMessage = async (messageToSend: string, agentType: AgentType, in
   
   // 根据输入类型决定使用流式还是非流式接口
   if (inputType === 'config' || inputType === 'intervention' || inputType === 'delete') {
+    // 如果是干预类型的消息，清除当前暂停状态
+    if (inputType === 'intervention') {
+      const pausedMessageIndex = sessionState.messages.findIndex(msg => 
+        !msg.direction && msg.isPaused
+      )
+      
+      if (pausedMessageIndex !== -1) {
+        sessionState.messages[pausedMessageIndex] = {
+          ...sessionState.messages[pausedMessageIndex],
+          isPaused: false,
+          _updateTimestamp: Date.now()
+        }
+      }
+    }
+    
     // 这些类型使用非流式接口，不需要建立SSE连接
     await handleSendMessageInput(messageToSend, files, agentType, inputType)
   } else {
@@ -685,7 +754,9 @@ const handleSSEEvent = async (eventData: any, messageIndex: number, sessionId: n
         sessionState.messages.splice(messageIndex, 1, { 
           ...msg, 
           content: eventData.message || 'AI正在思考...', 
-          isStreaming: true 
+          isStreaming: true,
+          // 🔥 重要：保留现有的isPaused状态
+          isPaused: msg.isPaused
         })
         await nextTick()
       }
@@ -716,6 +787,8 @@ const handleSSEEvent = async (eventData: any, messageIndex: number, sessionId: n
             ...msg, 
             content: sessionState.currentStreamMessage, 
             isStreaming: true,
+            // 🔥 重要：保留现有的isPaused状态，不要被SSE更新覆盖
+            isPaused: msg.isPaused,
             // 添加时间戳确保每次都是新对象，强制触发响应式更新
             _updateTimestamp: Date.now()
           }
@@ -768,6 +841,8 @@ const handleSSEEvent = async (eventData: any, messageIndex: number, sessionId: n
           ...sessionState.messages[messageIndex],
           content: completeContent,
           isStreaming: false,
+          // 🔥 重要：清除暂停状态，因为流式输出已完成
+          isPaused: false,
           // 添加完成时间戳，确保是新对象
           _completeTimestamp: Date.now()
         }
@@ -802,6 +877,8 @@ const handleSSEEvent = async (eventData: any, messageIndex: number, sessionId: n
           content: `❌ 错误: ${errorMsg}`,
           isError: true,
           isStreaming: false,
+          // 🔥 重要：清除暂停状态，因为出现错误
+          isPaused: false,
           _errorTimestamp: Date.now()
         }
         sessionState.messages.splice(messageIndex, 1, errorMsgObj)
@@ -1034,6 +1111,8 @@ const scrollToBottom = () => {
             @open-file-preview="openFilePreview"
             @toggle-file-preview="toggleFilePreview"
             @create-session="handleCreateSession"
+            @pause-streaming="handlePauseStreaming"
+            @resume-streaming="handleResumeStreaming"
           />
         </div>
       </div>

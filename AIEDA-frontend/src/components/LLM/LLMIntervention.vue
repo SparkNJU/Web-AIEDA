@@ -105,7 +105,7 @@ const handleSoftIntervention = async (instruction: string): Promise<boolean> => 
     const requestData = {
       uid: props.uid,
       sid: props.sid,
-      content: instruction,
+      content: instruction || "0",
       inputType: "intervention" as "intervention",
       metadata: {
         type: "soft"

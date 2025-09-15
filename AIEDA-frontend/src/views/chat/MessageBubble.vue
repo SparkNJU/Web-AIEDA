@@ -17,6 +17,7 @@ const props = defineProps<{
   isUser: boolean // true=用户消息，false=AI消息
   isStreaming?: boolean // 是否正在流式输出
   isError?: boolean // 是否为错误消息
+  isPaused?: boolean // 是否处于暂停状态
   recordId?: number // 消息记录ID，用于获取关联的文件
   attachedFiles?: FileVO[] // 新增：直接传入的附件文件列表（用于刚发送的消息）
   uid?: number // 用户ID，用于发送确认信息
@@ -658,8 +659,18 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
         </template>
         
         <!-- 流式输出指示器 -->
-        <div v-if="props.isStreaming && !props.content.includes('🤔') && !props.content.includes('⏳') && !props.content.includes('❌')" class="streaming-indicator">
+        <div v-if="props.isStreaming && !props.isPaused && !props.content.includes('🤔') && !props.content.includes('⏳') && !props.content.includes('❌')" class="streaming-indicator">
           <span class="cursor">|</span>
+        </div>
+        
+        <!-- 暂停状态指示器 -->
+        <div v-if="props.isPaused && !props.isUser" class="pause-indicator">
+          <div class="pause-content">
+            <div class="pause-spinner">
+              <div class="spinner-ring"></div>
+            </div>
+            <span class="pause-text">暂停中，正在等待用户指示</span>
+          </div>
         </div>
       </div>
       
@@ -750,6 +761,51 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
 @keyframes blink {
   0%, 45% { opacity: 1; }
   50%, 100% { opacity: 0; }
+}
+
+/* 暂停状态指示器样式 */
+.pause-indicator {
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border-radius: 12px;
+  border-left: 4px solid #f59e0b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.pause-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pause-spinner {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.spinner-ring {
+  width: 20px;
+  height: 20px;
+  border: 2px solid transparent;
+  border-top: 2px solid #f59e0b;
+  border-right: 2px solid #f59e0b;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.pause-text {
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.025em;
 }
 
 .main-content {
@@ -857,6 +913,22 @@ const checkAndAdjustBubbleHeight = (expandedContent: HTMLElement, triggerElement
   color: #ffffff;
   border-left-color: rgba(102, 8, 163, 0.8);
   border: 1px solid rgba(102, 8, 163, 0.3);
+}
+
+/* 夜间模式下的暂停指示器样式 */
+[data-theme="dark"] .pause-indicator {
+  background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+  border-left-color: #fbbf24;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .pause-text {
+  color: #d1d5db;
+}
+
+[data-theme="dark"] .spinner-ring {
+  border-top-color: #fbbf24;
+  border-right-color: #fbbf24;
 }
 
 /* KaTeX数学公式样式优化 */

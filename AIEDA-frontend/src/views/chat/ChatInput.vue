@@ -35,6 +35,7 @@ const emit = defineEmits<{
   'create-session': [] // 新增：创建会话事件
   'pause-streaming': [] // 新增：暂停流式输出事件
   'send-instruction': [instruction: string] // 新增：发送指令事件
+  'resume-streaming': [] // 新增：恢复流式输出事件，清除暂停状态
 }>()
 
 // 响应式数据
@@ -194,20 +195,18 @@ const sendMessage = async () => {
 
 // 处理暂停流式输出
 const handlePauseStreaming = async () => {
-  console.log('触发硬干预暂停')
-  
   // 使用LLMIntervention组件的硬干预功能
   if (llmInterventionRef.value) {
     const success = await llmInterventionRef.value.handleHardIntervention()
     if (success) {
       interventionState.value = 'paused'
-      console.log('硬干预成功，状态切换为paused')
+      emit('pause-streaming')
     } else {
-      console.error('硬干预失败')
+      interventionState.value = 'paused'
+      emit('pause-streaming')
     }
   } else {
     // 兜底处理：直接发射事件
-    console.log('LLMIntervention组件未找到，使用兜底处理')
     interventionState.value = 'paused'
     emit('pause-streaming')
   }
@@ -215,21 +214,27 @@ const handlePauseStreaming = async () => {
 
 // 处理发送干预指令
 const handleSendInstruction = async () => {
-  if (props.inputMessage.trim()) {
-    console.log('发送软干预指令:', props.inputMessage.trim())
+  // 在暂停状态下允许发送空指令，其他状态需要有输入内容
+  const shouldSendInstruction = interventionState.value === 'paused' || props.inputMessage.trim()
+  
+  if (shouldSendInstruction) {
+    const instructionContent = props.inputMessage.trim()
+    console.log('发送软干预指令:', instructionContent || '(空指令)')
     
     // 记录当前状态
     const wasInPausedState = interventionState.value === 'paused'
     
     // 使用LLMIntervention组件的软干预功能
     if (llmInterventionRef.value) {
-      const success = await llmInterventionRef.value.handleSoftIntervention(props.inputMessage.trim())
+      const success = await llmInterventionRef.value.handleSoftIntervention(instructionContent)
       if (success) {
         // 发送成功后的状态处理
         if (wasInPausedState) {
           // 如果之前是paused状态，现在应该回到streaming状态
           interventionState.value = 'streaming'
           console.log('软干预发送成功，从paused状态恢复到streaming状态')
+          // 通知父组件清除暂停状态
+          emit('resume-streaming')
         } else {
           // 如果之前是streaming状态，继续保持streaming状态
           console.log('软干预发送成功，继续保持streaming状态')
@@ -243,8 +248,12 @@ const handleSendInstruction = async () => {
     } else {
       // 兜底处理：直接发射事件
       console.log('LLMIntervention组件未找到，使用兜底处理')
-      emit('send-instruction', props.inputMessage.trim())
+      emit('send-instruction', instructionContent)
       interventionState.value = wasInPausedState ? 'streaming' : 'normal'
+      // 如果从暂停状态恢复，也要通知清除暂停状态
+      if (wasInPausedState) {
+        emit('resume-streaming')
+      }
       emit('update:input-message', '')
     }
   }
