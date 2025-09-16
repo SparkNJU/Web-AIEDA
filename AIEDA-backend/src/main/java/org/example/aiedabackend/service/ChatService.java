@@ -48,16 +48,6 @@ public interface ChatService {
     SseEmitter sendMessageWithFilesSSE(Integer uid, Integer sid, String content, List<String> fileReferences, java.util.Map<String, Object> metadata);
 
     /**
-     * 发送配置消息（不等待流式回复，仅发送配置）
-     */
-    SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType);
-
-    /**
-     * 发送自定义配置消息（支持用户自定义的LLM配置）
-     */
-    SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType, String apiKey, String baseUrl, String model);
-
-    /**
      * 更新会话标题
      */
     boolean updateSessionTitle(Integer uid, Integer sid, String title);

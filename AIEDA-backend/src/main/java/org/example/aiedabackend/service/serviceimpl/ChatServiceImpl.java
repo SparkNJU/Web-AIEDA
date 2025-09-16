@@ -54,19 +54,19 @@ public class ChatServiceImpl implements ChatService {
     // LLM配置参数
     @Value("${llm.openai.api-key}")
     private String openaiApiKey;
-    
+
     @Value("${llm.openai.base-url}")
     private String openaiBaseUrl;
-    
+
     @Value("${llm.openai.model}")
     private String openaiModel;
-    
+
     @Value("${llm.execution.model}")
     private String executionModel;
-    
+
     @Value("${llm.temperature}")
     private String temperature;
-    
+
     @Value("${llm.max-tokens}")
     private String maxTokens;
 
@@ -109,26 +109,26 @@ public class ChatServiceImpl implements ChatService {
     private void registerSseConnection(SseEmitter emitter, Integer sid) {
         long currentTime = System.currentTimeMillis();
         sseLastActivityMap.put(emitter, new AtomicLong(currentTime));
-        
+
         // 检查是否已有该会话的SSE连接，如果有则关闭旧连接
         SseEmitter oldEmitter = sessionSseMap.get(sid);
         if (oldEmitter != null) {
             log.warn("[{}] 🔄 会话{}已存在SSE连接，关闭旧连接", getCurrentTimestamp(), sid);
             closeSseConnection(oldEmitter, "新连接替换");
         }
-        
+
         // 注册新连接
         sessionSseMap.put(sid, emitter);
         log.info("[{}] 🔗 注册SSE连接超时监控 - 会话ID: {}", getCurrentTimestamp(), sid);
-        
+
         // 停止旧的超时检查任务（如果存在）
         stopSessionTimeoutMonitoring(sid);
-        
+
         // 启动新的超时检查任务
         java.util.concurrent.ScheduledFuture<?> timeoutTask = timeoutScheduler.scheduleAtFixedRate(() -> {
             checkSseTimeout(emitter);
         }, INACTIVITY_TIMEOUT, 5000L, TimeUnit.MILLISECONDS); // 每5秒检查一次
-        
+
         // 保存任务引用，用于后续的停止和重启操作
         sessionTimeoutTasks.put(sid, timeoutTask);
     }
@@ -173,7 +173,7 @@ public class ChatServiceImpl implements ChatService {
     private void restartSessionTimeoutMonitoring(Integer sid) {
         // 首先停止现有的监控任务（如果存在）
         stopSessionTimeoutMonitoring(sid);
-        
+
         // 获取该会话对应的SSE连接
         SseEmitter emitter = sessionSseMap.get(sid);
         if (emitter != null) {
@@ -182,12 +182,12 @@ public class ChatServiceImpl implements ChatService {
             if (lastActivity != null) {
                 lastActivity.set(System.currentTimeMillis());
             }
-            
+
             // 启动新的超时检查任务
             java.util.concurrent.ScheduledFuture<?> timeoutTask = timeoutScheduler.scheduleAtFixedRate(() -> {
                 checkSseTimeout(emitter);
             }, INACTIVITY_TIMEOUT, 5000L, TimeUnit.MILLISECONDS);
-            
+
             sessionTimeoutTasks.put(sid, timeoutTask);
             log.info("[{}] 🔄 重启会话{}的超时监控", getCurrentTimestamp(), sid);
         } else {
@@ -206,7 +206,7 @@ public class ChatServiceImpl implements ChatService {
 
         long currentTime = System.currentTimeMillis();
         long lastActivityTime = lastActivity.get();
-        
+
         if (currentTime - lastActivityTime > INACTIVITY_TIMEOUT) {
             log.warn("[{}] ⏰ SSE连接因120秒无活动而超时，准备关闭", getCurrentTimestamp());
             closeSseConnection(emitter, "无活动超时");
@@ -226,91 +226,22 @@ public class ChatServiceImpl implements ChatService {
                     break;
                 }
             }
-            
+
             if (sidToRemove != null) {
                 // 停止超时监控任务
                 stopSessionTimeoutMonitoring(sidToRemove);
                 // 从会话映射中移除
                 sessionSseMap.remove(sidToRemove);
             }
-            
+
             // 清理超时监控
             sseLastActivityMap.remove(emitter);
-            
+
             emitter.complete();
-            log.info("[{}] 🔌 SSE连接已关闭 - 原因: {}", getCurrentTimestamp(), reason);
+            log.info("[{}] � SSE连接已关闭 - 原因: {}", getCurrentTimestamp(), reason);
         } catch (Exception e) {
             log.error("[{}] ❌ 关闭SSE连接失败 - 原因: {}", getCurrentTimestamp(), reason, e);
         }
-    }
-
-    /**
-     * 关闭并完全清理SSE连接（新增方法）
-     * 与closeSseConnection的区别：这个方法确保完全清理，避免连接泄漏
-     */
-    private void closeAndCleanupSseConnection(SseEmitter emitter, String reason) {
-        if (emitter == null) {
-            log.debug("[{}] 🔄 尝试清理空的SSE连接，跳过处理", getCurrentTimestamp());
-            return;
-        }
-        
-        log.info("[{}] 🧽 完全清理SSE连接: {}", getCurrentTimestamp(), reason);
-        
-        try {
-            // 找到对应的会话ID
-            Integer sidToRemove = null;
-            for (java.util.Map.Entry<Integer, SseEmitter> entry : sessionSseMap.entrySet()) {
-                if (entry.getValue() == emitter) { // 使用 == 而不是 equals 来检查引用
-                    sidToRemove = entry.getKey();
-                    break;
-                }
-            }
-            
-            if (sidToRemove != null) {
-                log.info("[{}] 🎯 找到要清理的会话ID: {}", getCurrentTimestamp(), sidToRemove);
-                
-                // 停止该会话的超时监控任务
-                java.util.concurrent.ScheduledFuture<?> timeoutTask = sessionTimeoutTasks.remove(sidToRemove);
-                if (timeoutTask != null) {
-                    timeoutTask.cancel(true); // 使用强制取消
-                    log.debug("[{}] ⏰ 已强制停止会话 {} 的超时监控任务", getCurrentTimestamp(), sidToRemove);
-                }
-                
-                // 从会话映射中移除
-                sessionSseMap.remove(sidToRemove);
-                log.info("[{}] 🧹 已从会话映射中移除SSE连接，会话ID: {}", getCurrentTimestamp(), sidToRemove);
-            } else {
-                log.warn("[{}] ⚠️ 未在会话映射中找到要清理的SSE连接", getCurrentTimestamp());
-            }
-            
-            // 从活跃连接映射中移除
-            sseLastActivityMap.remove(emitter);
-            log.debug("[{}] 🧹 已从活跃连接映射中移除SSE连接", getCurrentTimestamp());
-            
-            // 先尝试正常完成连接
-            try {
-                emitter.complete();
-                log.info("[{}] ✅ SSE连接已正常完成并清理", getCurrentTimestamp());
-            } catch (IllegalStateException e) {
-                if (e.getMessage() != null && e.getMessage().contains("ResponseBodyEmitter has already completed")) {
-                    log.debug("[{}] 📝 SSE连接已经完成，跳过重复完成操作", getCurrentTimestamp());
-                } else {
-                    log.warn("[{}] ⚠️ 完成SSE连接时状态异常: {}", getCurrentTimestamp(), e.getMessage());
-                }
-            }
-            
-        } catch (Exception e) {
-            log.error("[{}] ❌ 清理SSE连接过程中发生异常: {}", getCurrentTimestamp(), e.getMessage());
-            try {
-                // 如果正常清理失败，尝试强制清理
-                emitter.completeWithError(new RuntimeException("连接强制关闭: " + reason));
-                log.warn("[{}] ⚠️ 已强制关闭SSE连接", getCurrentTimestamp());
-            } catch (Exception ee) {
-                log.error("[{}] ❌ 强制关闭SSE连接也失败: {}", getCurrentTimestamp(), ee.getMessage());
-            }
-        }
-        
-        log.info("[{}] ✨ SSE连接完全清理完成", getCurrentTimestamp());
     }
 
     /**
@@ -324,7 +255,7 @@ public class ChatServiceImpl implements ChatService {
             log.warn("[{}] ❌ SSE发射器为null", getCurrentTimestamp());
             return false;
         }
-        
+
         // 简单检查：如果emitter不为null，就认为可能有效
         // 实际的连接状态将在发送数据时检查
         log.debug("[{}] ✅ SSE发射器存在，假定连接有效", getCurrentTimestamp());
@@ -348,7 +279,7 @@ public class ChatServiceImpl implements ChatService {
 
         // 创建新的SSE连接，设置较长但有限的超时时间
         SseEmitter emitter = new SseEmitter(300000L); // 5分钟超时，避免无限连接
-        
+
         // 为SSE连接设置服务器环境优化的响应头
         try {
             // 通过HttpServletResponse设置SSE相关头信息（针对服务器环境优化）
@@ -394,10 +325,10 @@ public class ChatServiceImpl implements ChatService {
         try {
             String confirmMessage = "{\"type\":\"connection\",\"message\":\"会话SSE连接已建立\",\"sessionId\":" + sid + ",\"userId\":" + uid + "}";
             emitter.send(SseEmitter.event()
-                .name("connection")
-                .data(confirmMessage)
-                .reconnectTime(3000));
-                
+                    .name("connection")
+                    .data(confirmMessage)
+                    .reconnectTime(3000));
+
             // 强制刷新确认消息
             try {
                 java.lang.reflect.Field field = emitter.getClass().getDeclaredField("handler");
@@ -410,7 +341,7 @@ public class ChatServiceImpl implements ChatService {
             } catch (Exception flushEx) {
                 log.debug("[{}] 无法强制刷新连接确认消息: {}", getCurrentTimestamp(), flushEx.getMessage());
             }
-            
+
             log.info("[{}] 📤 会话 {} SSE连接确认消息已发送", getCurrentTimestamp(), sid);
         } catch (IOException e) {
             log.error("[{}] ❌ 发送SSE连接确认消息失败: {}", getCurrentTimestamp(), e.getMessage());
@@ -505,7 +436,7 @@ public class ChatServiceImpl implements ChatService {
         // 调用统一的内部方法，不传文件引用
         return sendMessageSSEInternal(uid, sid, content, null, metadata);
     }
-    
+
     /**
      * 从metadata中获取字符串值的辅助方法
      */
@@ -541,17 +472,17 @@ public class ChatServiceImpl implements ChatService {
     private SseEmitter sendMessageSSEInternal(Integer uid, Integer sid, String content, List<String> fileReferences, java.util.Map<String, Object> metadata) {
         // 根据是否有文件来决定日志信息
         if (fileReferences != null && !fileReferences.isEmpty()) {
-            log.info("[{}] 📨 开始处理带文件的SSE消息请求 - uid: {}, sid: {}, fileReferences: {}, metadata: {}", 
+            log.info("[{}] 📨 开始处理带文件的SSE消息请求 - uid: {}, sid: {}, fileReferences: {}, metadata: {}",
                     getCurrentTimestamp(), uid, sid, fileReferences, metadata);
         } else {
-            log.info("[{}] 📨 开始处理SSE消息请求 - uid: {}, sid: {}, metadata: {}", 
+            log.info("[{}] 📨 开始处理SSE消息请求 - uid: {}, sid: {}, metadata: {}",
                     getCurrentTimestamp(), uid, sid, metadata);
         }
-        
+
         // 从metadata中提取agent_type和input_type，如果没有则使用默认值
         String agentType = getStringFromMetadata(metadata, "agent_type", "orchestrator");
         String inputType = getStringFromMetadata(metadata, "input_type", "question");
-        
+
         // 🔗 获取或创建会话级SSE连接
         SseEmitter emitter = getOrCreateSessionSSE(uid, sid);
 
@@ -564,15 +495,15 @@ public class ChatServiceImpl implements ChatService {
         LocalDateTime now = LocalDateTime.now();
         Record userRecord = new Record(sid, uid, true, content, nextSeq, MessageTypeConstant.USER, now);
         Record savedRecord = recordRepository.save(userRecord);
-        
+
         // 🔗 如果有文件引用，则关联文件与当前记录
         if (fileReferences != null && !fileReferences.isEmpty()) {
             try {
                 fileRepository.updateRidByFileIds(fileReferences, savedRecord.getRid());
-                log.info("[{}] ✅ 成功关联 {} 个文件到记录 {} - fileIds: {}", 
+                log.info("[{}] ✅ 成功关联 {} 个文件到记录 {} - fileIds: {}",
                         getCurrentTimestamp(), fileReferences.size(), savedRecord.getRid(), fileReferences);
             } catch (Exception e) {
-                log.error("[{}] ❌ 关联文件到记录失败 - recordId: {}, fileIds: {}, error: {}", 
+                log.error("[{}] ❌ 关联文件到记录失败 - recordId: {}, fileIds: {}, error: {}",
                         getCurrentTimestamp(), savedRecord.getRid(), fileReferences, e.getMessage());
             }
         }
@@ -599,35 +530,13 @@ public class ChatServiceImpl implements ChatService {
         // 检查是否已有该会话的SSE连接
         SseEmitter existingEmitter = sessionSseMap.get(sid);
         if (existingEmitter != null) {
-            // 验证现有连接是否仍然有效
-            try {
-                // 尝试检查连接状态
-                if (isEmitterActive(existingEmitter)) {
-                    log.info("[{}] ♻️ 复用会话 {} 的现有SSE连接", getCurrentTimestamp(), sid);
-                    return existingEmitter;
-                } else {
-                    log.warn("[{}] ⚠️ 会话 {} 的现有SSE连接无效，将创建新连接", getCurrentTimestamp(), sid);
-                    // 清理无效的连接
-                    closeAndCleanupSseConnection(existingEmitter, "连接无效，清理后重新创建");
-                }
-            } catch (Exception e) {
-                log.warn("[{}] ⚠️ 检查会话 {} 的SSE连接时出错，将创建新连接: {}", getCurrentTimestamp(), sid, e.getMessage());
-                // 清理有问题的连接
-                closeAndCleanupSseConnection(existingEmitter, "连接检查异常，清理后重新创建");
-            }
+            log.info("[{}] ♻️  复用会话 {} 的现有SSE连接", getCurrentTimestamp(), sid);
+            return existingEmitter;
         }
 
         // 创建新的会话级SSE连接
         log.info("[{}] 🆕 为会话 {} 创建新的SSE连接", getCurrentTimestamp(), sid);
         return createSessionSSE(uid, sid);
-    }
-
-    /**
-     * 处理AI流式回复的完整流程（支持Agent类型和输入类型）
-     */
-    private void processAIStreamResponse(SseEmitter emitter, Integer uid, Integer sid, String content, int nextSeq, String agentType, String inputType) {
-        // 委托给支持metadata的完整版本，使用空metadata
-        processAIStreamResponse(emitter, uid, sid, content, nextSeq, agentType, inputType, null);
     }
 
     /**
@@ -644,32 +553,17 @@ public class ChatServiceImpl implements ChatService {
             inputRequest.put("user_id", uid.toString());
             inputRequest.put("input_text", content);
             inputRequest.put("input_type", inputType != null ? inputType : "question"); // 使用传入的inputType
-            
+
             // 添加metadata，包含agent_type
             var metadata = new java.util.HashMap<String, Object>();
             metadata.put("agent_type", agentType != null ? agentType : "orchestrator");
-            
+
             // 合并请求中的metadata（如干预类型信息）
             if (requestMetadata != null && !requestMetadata.isEmpty()) {
                 metadata.putAll(requestMetadata);
                 log.info("[{}] 📋 合并请求metadata: {}", getCurrentTimestamp(), requestMetadata);
             }
-            
-            // 如果是config类型，添加LLM配置
-            String finalInputType = inputType != null ? inputType : "question";
-            if ("config".equals(finalInputType)) {
-                var llmConfig = new java.util.HashMap<String, Object>();
-                llmConfig.put("api_key", openaiApiKey);
-                llmConfig.put("base_url", openaiBaseUrl);
-                llmConfig.put("model", openaiModel);
-                metadata.put("llm_config", llmConfig);
-                
-                // 添加其他配置参数
-                metadata.put("execution_model", executionModel);
-                metadata.put("temperature", temperature);
-                metadata.put("max_tokens", maxTokens);
-            }
-            
+
             inputRequest.put("metadata", metadata);
 
             var inputResponse = restTemplate.postForObject(userInputUrl, inputRequest, java.util.Map.class);
@@ -731,27 +625,27 @@ public class ChatServiceImpl implements ChatService {
         connection.setReadTimeout(60000); // 60秒读取超时
 
         try (BufferedReader reader = new BufferedReader(
-            new InputStreamReader(connection.getInputStream(), "UTF-8"))) {
+                new InputStreamReader(connection.getInputStream(), "UTF-8"))) {
 
-            log.info("[{}] 🔗 SSE连接已建立，开始读取大模型流式数据 - sessionId: {}, URL: {}", 
-                getCurrentTimestamp(), sessionId, sseStreamUrl);
-            
+            log.info("[{}] 🔗 SSE连接已建立，开始读取大模型流式数据 - sessionId: {}, URL: {}",
+                    getCurrentTimestamp(), sessionId, sseStreamUrl);
+
             String line;
             // StringBuilder currentEvent = new StringBuilder(); // 不再需要该变量
             int lineCount = 0;
-            
+
             while ((line = reader.readLine()) != null && !generationFinished) {
                 lineCount++;
-                
+
                 // 每100行检查一次连接状态
                 if (lineCount % 100 == 0) {
                     if (!isEmitterActive(emitter)) {
-                        log.warn("[{}] ⚠️  SSE连接已关闭，停止处理流式数据 - sessionId: {}, 行号: {}", 
-                            getCurrentTimestamp(), sessionId, lineCount);
+                        log.warn("[{}] ⚠️  SSE连接已关闭，停止处理流式数据 - sessionId: {}, 行号: {}",
+                                getCurrentTimestamp(), sessionId, lineCount);
                         break;
                     }
                 }
-                
+
                 // 处理SSE数据行
                 if (line.startsWith("data: ")) {
                     String jsonData = line.substring(6); // 移除"data: "前缀
@@ -761,26 +655,26 @@ public class ChatServiceImpl implements ChatService {
                         continue;
                     }
 
-                    log.info("[{}] 📨 从大模型收到SSE数据 - sessionId: {}, 行号: {}, 数据长度: {}", 
-                        getCurrentTimestamp(), sessionId, lineCount, jsonData.length());
+                    log.info("[{}] 📨 从大模型收到SSE数据 - sessionId: {}, 行号: {}, 数据长度: {}",
+                            getCurrentTimestamp(), sessionId, lineCount, jsonData.length());
 
                     try {
                         // 解析并处理事件数据，立即转发到前端
                         log.info("[{}] 🔄 开始处理SSE事件数据... - sessionId: {}", getCurrentTimestamp(), sessionId);
                         generationFinished = processSSEEventData(emitter, jsonData, sessionId,
-                            aiReply, fullDelta, foundFinishStart);
-                        
+                                aiReply, fullDelta, foundFinishStart);
+
                         if (generationFinished) {
-                            log.info("[{}] 🏁 检测到生成结束信号 - sessionId: {}, 总处理行数: {}", 
-                                getCurrentTimestamp(), sessionId, lineCount);
+                            log.info("[{}] 🏁 检测到生成结束信号 - sessionId: {}, 总处理行数: {}",
+                                    getCurrentTimestamp(), sessionId, lineCount);
                             break;
                         }
 
                     } catch (Exception parseError) {
-                        log.error("[{}] ❌ 解析SSE事件数据失败 - sessionId: {}, 行号: {}, 数据: {}", 
-                            getCurrentTimestamp(), sessionId, lineCount, 
-                            jsonData.length() > 200 ? jsonData.substring(0, 200) + "..." : jsonData, 
-                            parseError);
+                        log.error("[{}] ❌ 解析SSE事件数据失败 - sessionId: {}, 行号: {}, 数据: {}",
+                                getCurrentTimestamp(), sessionId, lineCount,
+                                jsonData.length() > 200 ? jsonData.substring(0, 200) + "..." : jsonData,
+                                parseError);
                         // 即使解析失败，也尝试继续处理其他事件
                     }
                 } else if (line.trim().isEmpty()) {
@@ -791,7 +685,7 @@ public class ChatServiceImpl implements ChatService {
                     // 处理其他SSE头部信息（如event:, id:等）
                     log.info("[{}] 📋 SSE头部信息 - sessionId: {}: {}", getCurrentTimestamp(), sessionId, line);
                 }
-                
+
                 // 确保及时响应前端，避免缓冲延迟
                 if (aiReply.length() > 0) {
                     // 每隔一定数量的字符就主动flush一次
@@ -815,10 +709,10 @@ public class ChatServiceImpl implements ChatService {
      * 处理SSE事件数据
      */
     private boolean processSSEEventData(SseEmitter emitter, String jsonData, String sessionId,
-                                       StringBuilder aiReply, StringBuilder fullDelta, boolean[] foundFinishStart) throws Exception {
+                                        StringBuilder aiReply, StringBuilder fullDelta, boolean[] foundFinishStart) throws Exception {
 
         log.info("[{}] 🔍 开始解析SSE事件数据 - 数据长度: {}", getCurrentTimestamp(), jsonData.length());
-        
+
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> eventData = mapper.readValue(jsonData, java.util.Map.class);
@@ -826,7 +720,7 @@ public class ChatServiceImpl implements ChatService {
         // 打印接收到的事件数据用于调试
         String eventType = (String) eventData.get("type");
         log.info("[{}] 📊 解析SSE事件成功 - 事件类型: {}, 会话ID: {}", getCurrentTimestamp(), eventType, sessionId);
-        
+
         if (log.isTraceEnabled()) {
             log.trace("[{}] SSE事件详细内容: {}", getCurrentTimestamp(), jsonData);
         }
@@ -889,7 +783,7 @@ public class ChatServiceImpl implements ChatService {
      * 处理单个事件
      */
     private boolean processSingleEvent(SseEmitter emitter, java.util.Map<String, Object> event, String sessionId,
-                                     StringBuilder aiReply, StringBuilder fullDelta, boolean[] foundFinishStart) throws Exception {
+                                       StringBuilder aiReply, StringBuilder fullDelta, boolean[] foundFinishStart) throws Exception {
 
         // 尝试从顶层和data字段获取session_id和user_id
         String eventSessionId = (String) event.get("session_id");
@@ -910,13 +804,13 @@ public class ChatServiceImpl implements ChatService {
         }
 
         // 打印事件详情到控制台
-        log.info("[{}] 🔍 处理单个事件 - session_id: {}, user_id: {}, event: {}, tool: {}", 
-            getCurrentTimestamp(), eventSessionId, userId, eventType, tool);
+        log.info("[{}] 🔍 处理单个事件 - session_id: {}, user_id: {}, event: {}, tool: {}",
+                getCurrentTimestamp(), eventSessionId, userId, eventType, tool);
 
         // 🔒 关键修复：验证事件的会话ID是否与当前SSE连接的会话ID匹配
         if (eventSessionId != null && !eventSessionId.equals(sessionId)) {
-            log.warn("[{}] ⚠️  事件会话ID({})与当前SSE连接会话ID({})不匹配，跳过处理", 
-                getCurrentTimestamp(), eventSessionId, sessionId);
+            log.warn("[{}] ⚠️  事件会话ID({})与当前SSE连接会话ID({})不匹配，跳过处理",
+                    getCurrentTimestamp(), eventSessionId, sessionId);
             return false; // 跳过不属于当前会话的事件
         }
 
@@ -932,7 +826,7 @@ public class ChatServiceImpl implements ChatService {
             // 首先尝试从顶层获取payload
             @SuppressWarnings("unchecked")
             var payload = (java.util.Map<String, Object>) event.get("payload");
-            
+
             // 如果顶层没有，尝试从data字段获取
             if (payload == null) {
                 @SuppressWarnings("unchecked")
@@ -943,44 +837,44 @@ public class ChatServiceImpl implements ChatService {
                     payload = dataPayload; // 赋值给外层变量
                 }
             }
-            
+
             if (payload != null && payload.get("delta") != null) {
                 String delta = payload.get("delta").toString();
 
                 // 添加详细的接收日志
-                log.info("[{}] 🔵 从大模型接收Delta内容 - 长度: {}, 内容: {}", 
-                    getCurrentTimestamp(), 
-                    delta.length(),
-                    delta.length() > 100 ? delta.substring(0, 100) + "..." : delta);
+                log.info("[{}] 🔵 从大模型接收Delta内容 - 长度: {}, 内容: {}",
+                        getCurrentTimestamp(),
+                        delta.length(),
+                        delta.length() > 100 ? delta.substring(0, 100) + "..." : delta);
 
                 if (!delta.isEmpty()) {
                     // 记录处理前的状态
                     log.info("[{}] 🔄 开始处理Delta内容 - 原始长度: {}", getCurrentTimestamp(), delta.length());
-                    
+
                     // 处理delta内容，过滤finish标签但保留其他标签
                     String processedDelta = processAndFilterDelta(delta, fullDelta);
-                    
+
                     if (!processedDelta.isEmpty()) {
                         // 记录处理后的状态
-                        log.info("[{}] ✅ Delta处理完成 - 处理后长度: {}, 将发送到前端: {}", 
-                            getCurrentTimestamp(), 
-                            processedDelta.length(),
-                            processedDelta.length() > 50 ? processedDelta.substring(0, 50) + "..." : processedDelta);
-                        
+                        log.info("[{}] ✅ Delta处理完成 - 处理后长度: {}, 将发送到前端: {}",
+                                getCurrentTimestamp(),
+                                processedDelta.length(),
+                                processedDelta.length() > 50 ? processedDelta.substring(0, 50) + "..." : processedDelta);
+
                         // 发送处理后的内容到前端
                         long startTime = System.currentTimeMillis();
                         sendDeltaToFrontend(emitter, processedDelta);
                         long endTime = System.currentTimeMillis();
-                        
+
                         aiReply.append(processedDelta);
-                        log.info("[{}] 📤 Delta发送完成 - 耗时: {}ms, 累计回复长度: {}", 
-                            getCurrentTimestamp(), 
-                            (endTime - startTime), 
-                            aiReply.length());
+                        log.info("[{}] 📤 Delta发送完成 - 耗时: {}ms, 累计回复长度: {}",
+                                getCurrentTimestamp(),
+                                (endTime - startTime),
+                                aiReply.length());
                     } else {
-                        log.info("[{}] ⚠️  Delta处理后为空，跳过发送 - 原始内容: {}", 
-                            getCurrentTimestamp(), 
-                            delta.length() > 30 ? delta.substring(0, 30) + "..." : delta);
+                        log.info("[{}] ⚠️  Delta处理后为空，跳过发送 - 原始内容: {}",
+                                getCurrentTimestamp(),
+                                delta.length() > 30 ? delta.substring(0, 30) + "..." : delta);
                     }
                 } else {
                     log.info("[{}] ⚠️  接收到空的Delta内容，跳过处理", getCurrentTimestamp());
@@ -998,69 +892,68 @@ public class ChatServiceImpl implements ChatService {
      * 等待完整标签出现，过滤finish标签，保留其他标签
      */
     private String processAndFilterDelta(String delta, StringBuilder fullDelta) {
-        log.info("[{}] 🔧 开始过滤Delta内容 - 输入长度: {}, 累积缓冲区长度: {}", 
-            getCurrentTimestamp(), delta.length(), fullDelta.length());
-        
+        log.info("[{}] 🔧 开始过滤Delta内容 - 输入长度: {}, 累积缓冲区长度: {}",
+                getCurrentTimestamp(), delta.length(), fullDelta.length());
+
         fullDelta.append(delta);
         String accumulated = fullDelta.toString();
         StringBuilder result = new StringBuilder();
         StringBuilder remaining = new StringBuilder();
-        
+
         int tagCount = 0;
         int filteredTagCount = 0;
         int i = 0;
-        
+
         // 如果缓冲区过大（超过50B），强制清空并输出内容，避免无限积累
         if (accumulated.length() > 50) {
-            log.warn("[{}] ⚠️  缓冲区过大({} 字符)，强制清空并输出内容", 
-                getCurrentTimestamp(), accumulated.length());
+            log.warn("[{}] ⚠️  缓冲区过大({} 字符)，强制清空并输出内容",
+                    getCurrentTimestamp(), accumulated.length());
             fullDelta.setLength(0);
             // 简单过滤finish标签后直接返回
-//            String filteredContent = accumulated.replaceAll("(?i)</?finish>", "");
-            String filteredContent = accumulated;
+            String filteredContent = accumulated.replaceAll("(?i)</?finish>", "");
             log.info("[{}] 🔄 强制输出内容 - 长度: {}", getCurrentTimestamp(), filteredContent.length());
             return filteredContent;
         }
-        
+
         while (i < accumulated.length()) {
             char c = accumulated.charAt(i);
-            
+
             if (c == '<') {
                 // 寻找完整的标签
                 int tagStart = i;
                 int tagEnd = findCompleteTag(accumulated, i);
-                
+
                 if (tagEnd == -1) {
                     // 检查是否真的是HTML标签开始，还是只是数学比较符号
                     String potentialTag = accumulated.substring(i, Math.min(i + 50, accumulated.length()));
-                    
+
                     // 如果看起来不像HTML标签（没有字母跟在<后面，或者包含数学运算符），当作普通内容处理
                     if (!potentialTag.matches("<\\s*[a-zA-Z/].*") || potentialTag.matches(".*[<>=+\\-*/].*")) {
-                        log.info("[{}] 🔍 检测到非HTML标签的<符号，当作普通内容处理: {}", 
-                            getCurrentTimestamp(), potentialTag);
+                        log.info("[{}] 🔍 检测到非HTML标签的<符号，当作普通内容处理: {}",
+                                getCurrentTimestamp(), potentialTag);
                         result.append(c);
                         i++;
                         continue;
                     }
-                    
+
                     // 如果缓冲区中的不完整内容超过100个字符，可能不是真正的标签
                     if (accumulated.substring(i).length() > 100) {
-                        log.warn("[{}] ⚠️  疑似非标签内容过长，强制输出: {}", 
-                            getCurrentTimestamp(), accumulated.substring(i, Math.min(i + 30, accumulated.length())) + "...");
+                        log.warn("[{}] ⚠️  疑似非标签内容过长，强制输出: {}",
+                                getCurrentTimestamp(), accumulated.substring(i, Math.min(i + 30, accumulated.length())) + "...");
                         result.append(accumulated.substring(i));
                         break;
                     }
-                    
+
                     // 标签不完整，保留到remaining中等待更多内容
                     remaining.append(accumulated.substring(i));
-                    log.info("[{}] 📦 发现不完整标签，保留到缓冲区: {}", 
-                        getCurrentTimestamp(), accumulated.substring(i, Math.min(i + 20, accumulated.length())) + "...");
+                    log.info("[{}] 📦 发现不完整标签，保留到缓冲区: {}",
+                            getCurrentTimestamp(), accumulated.substring(i, Math.min(i + 20, accumulated.length())) + "...");
                     break;
                 } else {
                     // 找到完整标签
                     String tag = accumulated.substring(tagStart, tagEnd + 1);
                     tagCount++;
-                    
+
                     // 检查是否是finish标签
                     if (tag.matches("(?i)</?finish>")) {
                         // 是finish标签，跳过不添加到结果中
@@ -1079,15 +972,15 @@ public class ChatServiceImpl implements ChatService {
                 i++;
             }
         }
-        
+
         // 更新fullDelta为剩余未处理的内容
         fullDelta.setLength(0);
         fullDelta.append(remaining);
-        
+
         String resultStr = result.toString();
-        log.info("[{}] 🏁 Delta过滤完成 - 处理标签: {}, 过滤标签: {}, 输出长度: {}, 剩余缓冲: {}", 
-            getCurrentTimestamp(), tagCount, filteredTagCount, resultStr.length(), remaining.length());
-        
+        log.info("[{}] 🏁 Delta过滤完成 - 处理标签: {}, 过滤标签: {}, 输出长度: {}, 剩余缓冲: {}",
+                getCurrentTimestamp(), tagCount, filteredTagCount, resultStr.length(), remaining.length());
+
         return resultStr;
     }
 
@@ -1098,15 +991,15 @@ public class ChatServiceImpl implements ChatService {
         if (startPos >= text.length() || text.charAt(startPos) != '<') {
             return -1;
         }
-        
+
         // 寻找对应的'>'
         int pos = startPos + 1;
         boolean inQuotes = false;
         char quoteChar = 0;
-        
+
         while (pos < text.length()) {
             char c = text.charAt(pos);
-            
+
             if (!inQuotes && (c == '"' || c == '\'')) {
                 inQuotes = true;
                 quoteChar = c;
@@ -1115,70 +1008,11 @@ public class ChatServiceImpl implements ChatService {
             } else if (!inQuotes && c == '>') {
                 return pos; // 找到标签结束
             }
-            
+
             pos++;
         }
-        
-        return -1; // 标签不完整
-    }
 
-    /**
-     * 通用的SSE强制刷新函数
-     * 确保数据立即发送到前端，不被服务器缓冲区阻塞
-     */
-    private void forceFlushSseEmitter(SseEmitter emitter) {
-        try {
-            // 方法1：通过反射访问底层handler进行强制刷新
-            java.lang.reflect.Field handlerField = emitter.getClass().getDeclaredField("handler");
-            handlerField.setAccessible(true);
-            Object handler = handlerField.get(emitter);
-            
-            if (handler != null) {
-                // 尝试调用flush方法
-                try {
-                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
-                    flushMethod.invoke(handler);
-                    log.debug("[{}] ✅ SSE缓冲区强制刷新成功（handler.flush）", getCurrentTimestamp());
-                    return;
-                } catch (Exception e1) {
-                    log.debug("[{}] 📝 handler.flush方法失败，尝试其他方式: {}", getCurrentTimestamp(), e1.getMessage());
-                }
-                
-                // 方法2：尝试获取response对象并刷新
-                try {
-                    java.lang.reflect.Field responseField = handler.getClass().getDeclaredField("response");
-                    if (responseField != null) {
-                        responseField.setAccessible(true);
-                        Object response = responseField.get(handler);
-                        if (response != null) {
-                            java.lang.reflect.Method flushBufferMethod = response.getClass().getMethod("flushBuffer");
-                            flushBufferMethod.invoke(response);
-                            log.debug("[{}] ✅ SSE缓冲区强制刷新成功（response.flushBuffer）", getCurrentTimestamp());
-                            return;
-                        }
-                    }
-                } catch (Exception e2) {
-                    log.debug("[{}] 📝 response.flushBuffer方法失败: {}", getCurrentTimestamp(), e2.getMessage());
-                }
-            }
-            
-            // 方法3：通过HTTP响应对象刷新（如果可用）
-            HttpServletResponse response = getCurrentHttpResponse();
-            if (response != null) {
-                try {
-                    response.flushBuffer();
-                    log.debug("[{}] ✅ SSE缓冲区强制刷新成功（HttpServletResponse.flushBuffer）", getCurrentTimestamp());
-                    return;
-                } catch (Exception e3) {
-                    log.debug("[{}] 📝 HttpServletResponse.flushBuffer失败: {}", getCurrentTimestamp(), e3.getMessage());
-                }
-            }
-            
-            log.debug("[{}] ⚠️ 所有SSE刷新方法均失败，消息可能被缓冲", getCurrentTimestamp());
-            
-        } catch (Exception e) {
-            log.debug("[{}] ❌ SSE强制刷新过程中发生异常: {}", getCurrentTimestamp(), e.getMessage());
-        }
+        return -1; // 标签不完整
     }
 
     /**
@@ -1187,16 +1021,26 @@ public class ChatServiceImpl implements ChatService {
     private void sendErrorToFrontend(SseEmitter emitter, String errorMessage) {
         try {
             String errorJson = String.format(
-                "{\"type\":\"error\",\"message\":\"%s\"}",
-                errorMessage.replace("\"", "\\\""));
+                    "{\"type\":\"error\",\"message\":\"%s\"}",
+                    errorMessage.replace("\"", "\\\""));
             emitter.send(SseEmitter.event()
-                .name("message")
-                .data(errorJson)
-                .reconnectTime(3000));
-                
-            // 使用通用的强制刷新函数
-            forceFlushSseEmitter(emitter);
-            
+                    .name("message")
+                    .data(errorJson)
+                    .reconnectTime(3000));
+
+            // 强制刷新，确保数据立即发送
+            try {
+                java.lang.reflect.Field field = emitter.getClass().getDeclaredField("handler");
+                field.setAccessible(true);
+                Object handler = field.get(emitter);
+                if (handler != null) {
+                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
+                    flushMethod.invoke(handler);
+                }
+            } catch (Exception flushEx) {
+                log.debug("[{}] 无法强制刷新SSE缓冲区: {}", getCurrentTimestamp(), flushEx.getMessage());
+            }
+
         } catch (Exception e) {
             log.error("发送错误消息失败", e);
         }
@@ -1210,23 +1054,33 @@ public class ChatServiceImpl implements ChatService {
             String messageJson;
             if (extraData != null) {
                 messageJson = String.format(
-                    "{\"type\":\"%s\",\"message\":\"%s\",\"data\":%s}",
-                    type, message.replace("\"", "\\\""), extraData.toString());
+                        "{\"type\":\"%s\",\"message\":\"%s\",\"data\":%s}",
+                        type, message.replace("\"", "\\\""), extraData.toString());
             } else {
                 messageJson = String.format(
-                    "{\"type\":\"%s\",\"message\":\"%s\"}",
-                    type, message.replace("\"", "\\\""));
+                        "{\"type\":\"%s\",\"message\":\"%s\"}",
+                        type, message.replace("\"", "\\\""));
             }
-            
+
             // 使用统一的事件名和添加重连时间
             emitter.send(SseEmitter.event()
-                .name("message")
-                .data(messageJson)
-                .reconnectTime(3000));
-                
-            // 使用通用的强制刷新函数
-            forceFlushSseEmitter(emitter);
-            
+                    .name("message")
+                    .data(messageJson)
+                    .reconnectTime(3000));
+
+            // 强制刷新，确保数据立即发送
+            try {
+                java.lang.reflect.Field field = emitter.getClass().getDeclaredField("handler");
+                field.setAccessible(true);
+                Object handler = field.get(emitter);
+                if (handler != null) {
+                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
+                    flushMethod.invoke(handler);
+                }
+            } catch (Exception flushEx) {
+                log.debug("[{}] 无法强制刷新SSE缓冲区: {}", getCurrentTimestamp(), flushEx.getMessage());
+            }
+
         } catch (Exception e) {
             log.error("发送消息失败", e);
         }
@@ -1236,53 +1090,66 @@ public class ChatServiceImpl implements ChatService {
      * 发送增量内容到前端
      */
     private void sendDeltaToFrontend(SseEmitter emitter, String deltaContent) {
-        log.info("[{}] 📤 准备向前端发送增量内容 - 长度: {}, 内容: {}", 
-            getCurrentTimestamp(), 
-            deltaContent.length(),
-            deltaContent.length() > 50 ? deltaContent.substring(0, 50) + "..." : deltaContent);
-        
+        log.info("[{}] 📤 准备向前端发送增量内容 - 长度: {}, 内容: {}",
+                getCurrentTimestamp(),
+                deltaContent.length(),
+                deltaContent.length() > 50 ? deltaContent.substring(0, 50) + "..." : deltaContent);
+
         try {
             // 清理和转义内容
             String cleanContent = deltaContent
-                .replace("\\", "\\\\")   // 转义反斜杠
-                .replace("\"", "\\\"")   // 转义双引号
-                .replace("\n", "\\n")    // 转义换行符
-                .replace("\r", "\\r")    // 转义回车符
-                .replace("\t", "\\t");   // 转义制表符
-            
+                    .replace("\\", "\\\\")   // 转义反斜杠
+                    .replace("\"", "\\\"")   // 转义双引号
+                    .replace("\n", "\\n")    // 转义换行符
+                    .replace("\r", "\\r")    // 转义回车符
+                    .replace("\t", "\\t");   // 转义制表符
+
             String deltaJson = String.format(
-                "{\"type\":\"delta\",\"content\":\"%s\"}",
-                cleanContent);
-            
+                    "{\"type\":\"delta\",\"content\":\"%s\"}",
+                    cleanContent);
+
             log.debug("[{}] 🔄 准备发送SSE事件 - JSON长度: {}", getCurrentTimestamp(), deltaJson.length());
-            
+
             // 发送SSE事件，使用delta事件名以提高兼容性
             emitter.send(SseEmitter.event()
-                .name("message")
-                .data(deltaJson)
-                .reconnectTime(3000));  // 添加重连时间，提高稳定性
-            
-            // 使用通用的强制刷新函数（关键：立即发送到前端）
-            forceFlushSseEmitter(emitter);
-            
+                    .name("message")
+                    .data(deltaJson)
+                    .reconnectTime(3000));  // 添加重连时间，提高稳定性
+
+            // 强制刷新，确保数据立即发送（重要：解决服务器环境缓冲问题）
+            try {
+                // 通过反射访问响应对象进行强制刷新
+                java.lang.reflect.Field field = emitter.getClass().getDeclaredField("handler");
+                field.setAccessible(true);
+                Object handler = field.get(emitter);
+                if (handler != null) {
+                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
+                    flushMethod.invoke(handler);
+                    log.debug("[{}] 🔄 强制刷新SSE缓冲区成功", getCurrentTimestamp());
+                }
+            } catch (Exception flushEx) {
+                // 刷新失败不影响主流程，只记录debug日志
+                log.debug("[{}] 📝 无法强制刷新SSE缓冲区: {}", getCurrentTimestamp(), flushEx.getMessage());
+            }
+
             // 更新SSE活跃时间
             updateSseActivity(emitter);
-            
+
             // 添加成功日志
-            log.info("[{}] ✅ SSE增量数据发送成功 - 内容长度: {}, JSON长度: {}", 
-                getCurrentTimestamp(), deltaContent.length(), deltaJson.length());
-            
+            log.info("[{}] ✅ SSE增量数据发送成功 - 内容长度: {}, JSON长度: {}",
+                    getCurrentTimestamp(), deltaContent.length(), deltaJson.length());
+
         } catch (IllegalStateException e) {
             if (e.getMessage() != null && e.getMessage().contains("ResponseBodyEmitter has already completed")) {
-                log.warn("[{}] ❌ SSE连接已完成，跳过发送增量内容 - 内容长度: {}", 
-                    getCurrentTimestamp(), deltaContent.length());
+                log.warn("[{}] ❌ SSE连接已完成，跳过发送增量内容 - 内容长度: {}",
+                        getCurrentTimestamp(), deltaContent.length());
             } else {
-                log.warn("[{}] ❌ SSE连接状态异常，跳过发送增量内容 - 错误: {}, 内容长度: {}", 
-                    getCurrentTimestamp(), e.getMessage(), deltaContent.length());
+                log.warn("[{}] ❌ SSE连接状态异常，跳过发送增量内容 - 错误: {}, 内容长度: {}",
+                        getCurrentTimestamp(), e.getMessage(), deltaContent.length());
             }
         } catch (Exception e) {
-            log.error("[{}] ❌ 发送增量内容失败 - 内容长度: {}, 错误: {}", 
-                getCurrentTimestamp(), deltaContent.length(), e.getMessage(), e);
+            log.error("[{}] ❌ 发送增量内容失败 - 内容长度: {}, 错误: {}",
+                    getCurrentTimestamp(), deltaContent.length(), e.getMessage(), e);
         }
     }
 
@@ -1291,39 +1158,45 @@ public class ChatServiceImpl implements ChatService {
      */
     private void sendCompleteToFrontend(SseEmitter emitter, String message, int recordId) {
         log.debug("[{}] 准备发送完成信号: recordId={}", getCurrentTimestamp(), recordId);
-        
+
         try {
             String completeJson = String.format(
-                "{\"type\":\"complete\",\"message\":\"%s\",\"recordId\":%d}",
-                message, recordId);
-            
+                    "{\"type\":\"complete\",\"message\":\"%s\",\"recordId\":%d}",
+                    message, recordId);
+
             log.debug("[{}] 准备发送complete事件: {}", getCurrentTimestamp(), completeJson);
             emitter.send(SseEmitter.event()
-                .name("message")
-                .data(completeJson)
-                .reconnectTime(3000));
-                
-            // 使用通用的强制刷新函数
-            forceFlushSseEmitter(emitter);
-            
+                    .name("message")
+                    .data(completeJson)
+                    .reconnectTime(3000));
+
+            // 强制刷新，确保数据立即发送
+            try {
+                java.lang.reflect.Field field = emitter.getClass().getDeclaredField("handler");
+                field.setAccessible(true);
+                Object handler = field.get(emitter);
+                if (handler != null) {
+                    java.lang.reflect.Method flushMethod = handler.getClass().getMethod("flush");
+                    flushMethod.invoke(handler);
+                }
+            } catch (Exception flushEx) {
+                log.debug("[{}] 无法强制刷新SSE缓冲区: {}", getCurrentTimestamp(), flushEx.getMessage());
+            }
+
+            // 更新SSE活跃时间
+            updateSseActivity(emitter);
+
             log.info("[{}] complete事件已成功发送，recordId: {}", getCurrentTimestamp(), recordId);
-            
-            // 🔥 关键修复：发送完成信号后立即关闭SSE连接
-            closeAndCleanupSseConnection(emitter, "回复完成，正常关闭连接");
-            
+
         } catch (IllegalStateException e) {
             if (e.getMessage() != null && e.getMessage().contains("ResponseBodyEmitter has already completed")) {
                 log.warn("[{}] SSE连接已完成，跳过发送完成信号: recordId={}", getCurrentTimestamp(), recordId);
             } else {
-                log.warn("[{}] SSE连接状态异常，跳过发送完成信号 - 错误: {}, recordId={}", 
-                    getCurrentTimestamp(), e.getMessage(), recordId);
+                log.warn("[{}] SSE连接状态异常，跳过发送完成信号 - 错误: {}, recordId={}",
+                        getCurrentTimestamp(), e.getMessage(), recordId);
             }
-            // 连接异常时也要清理
-            closeAndCleanupSseConnection(emitter, "连接异常，强制清理");
         } catch (Exception e) {
             log.error("[{}] 发送完成信号失败，recordId: {}", getCurrentTimestamp(), recordId, e);
-            // 发送失败时也要清理连接
-            closeAndCleanupSseConnection(emitter, "发送失败，强制清理");
         }
     }
 
@@ -1335,18 +1208,13 @@ public class ChatServiceImpl implements ChatService {
             // 保存错误消息
             String errMsg = "AI回复失败: " + e.getMessage();
             Record errRecord = new Record(sid, uid, false, errMsg, nextSeq + 1,
-                MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
+                    MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
             recordRepository.save(errRecord);
 
-            // 发送错误信息到前端  
+            // 发送错误信息到前端
             sendErrorToFrontend(emitter, e.getMessage());
-            
-            // 🔥 关键修复：错误处理后也要清理SSE连接
-            closeAndCleanupSseConnection(emitter, "处理错误后清理连接");
         } catch (Exception sendError) {
             log.error("处理错误失败", sendError);
-            // 即使处理错误失败，也要尝试清理连接
-            closeAndCleanupSseConnection(emitter, "错误处理失败，强制清理连接");
         }
     }
 
@@ -1367,7 +1235,7 @@ public class ChatServiceImpl implements ChatService {
         StringBuilder aiReply = new StringBuilder();
         String userInputUrl = "http://localhost:8000/api/v1/user/input";
 
-        log.info("[{}] 📁 开始处理带文件的AI流式回复 - sid: {}, agentType: {}, inputType: {}, fileCount: {}", 
+        log.info("[{}] 📁 开始处理带文件的AI流式回复 - sid: {}, agentType: {}, inputType: {}, fileCount: {}",
                 getCurrentTimestamp(), sid, agentType, inputType, fileReferences != null ? fileReferences.size() : 0);
 
         try {
@@ -1378,7 +1246,7 @@ public class ChatServiceImpl implements ChatService {
                     File file = fileRepository.findByFileId(fileId);
                     if (file != null && file.getUid().equals(uid) && file.getSid().equals(sid)) {
                         validFileIds.add(fileId);
-                        log.info("[{}] ✅ 验证文件引用成功 - fileId: {}, fileName: {}", 
+                        log.info("[{}] ✅ 验证文件引用成功 - fileId: {}, fileName: {}",
                                 getCurrentTimestamp(), fileId, file.getOriginalName());
                     } else {
                         log.warn("[{}] ❌ 文件引用验证失败 - fileId: {}", getCurrentTimestamp(), fileId);
@@ -1387,7 +1255,7 @@ public class ChatServiceImpl implements ChatService {
             }
 
             // 2. 提交用户输入（包含文件引用）
-            log.info("[{}] 📤 准备提交带文件的用户输入到后端API - sid: {}, 有效文件数: {}", 
+            log.info("[{}] 📤 准备提交带文件的用户输入到后端API - sid: {}, 有效文件数: {}",
                     getCurrentTimestamp(), sid, validFileIds.size());
             var inputRequest = new java.util.HashMap<String, Object>();
             inputRequest.put("session_id", sid.toString());
@@ -1397,34 +1265,18 @@ public class ChatServiceImpl implements ChatService {
             if (!validFileIds.isEmpty()) {
                 inputRequest.put("file_references", validFileIds);
             }
-            
-            // 添加metadata字段，包含agent_type
-            var metadata = new java.util.HashMap<String, Object>();
-            metadata.put("agent_type", agentType != null ? agentType : "orchestrator");
-            
-            // 如果是config类型，添加LLM配置
-            String finalInputType = inputType != null ? inputType : "question";
-            if ("config".equals(finalInputType)) {
-                var llmConfig = new java.util.HashMap<String, Object>();
-                llmConfig.put("api_key", openaiApiKey);
-                llmConfig.put("base_url", openaiBaseUrl);
-                llmConfig.put("model", openaiModel);
-                metadata.put("llm_config", llmConfig);
-                
-                // 添加其他配置参数
-                metadata.put("execution_model", executionModel);
-                metadata.put("temperature", temperature);
-                metadata.put("max_tokens", maxTokens);
-            }
-            
-            inputRequest.put("metadata", metadata);
+
+            // 只添加基本的 agent_type，因为带文件的输入只会是 question 类型
+            var meta = new java.util.HashMap<String, Object>();
+            meta.put("agent_type", agentType != null ? agentType : "orchestrator");
+            inputRequest.put("metadata", meta);
 
             var inputResponse = restTemplate.postForObject(userInputUrl, inputRequest, java.util.Map.class);
-            log.info("[{}] 📥 带文件的用户输入提交完成 - sid: {}, response: {}", 
+            log.info("[{}] 📥 带文件的用户输入提交完成 - sid: {}, response: {}",
                     getCurrentTimestamp(), sid, inputResponse);
 
             if (inputResponse == null || !"success".equals(inputResponse.get("status"))) {
-                log.error("[{}] ❌ 提交带文件的用户输入失败 - sid: {}, response: {}", 
+                log.error("[{}] ❌ 提交带文件的用户输入失败 - sid: {}, response: {}",
                         getCurrentTimestamp(), sid, inputResponse);
                 sendErrorToFrontend(emitter, "提交用户输入失败");
                 return;
@@ -1438,22 +1290,22 @@ public class ChatServiceImpl implements ChatService {
             log.info("[{}] 🌐 开始建立SSE连接获取AI回复 - sid: {}", getCurrentTimestamp(), sid);
             String sessionId = sid.toString();
             String finalReply = getAIStreamResponse(emitter, sessionId, aiReply);
-            log.info("[{}] 📥 带文件的AI流式回复获取完成 - sid: {}, 回复长度: {}", 
+            log.info("[{}] 📥 带文件的AI流式回复获取完成 - sid: {}, 回复长度: {}",
                     getCurrentTimestamp(), sid, finalReply != null ? finalReply.length() : 0);
 
             // 保存完整的AI回复
             Record aiRecord = null;
             if (finalReply != null && !finalReply.trim().isEmpty() && !finalReply.equals("AI回复为空")) {
                 aiRecord = new Record(sid, uid, false, finalReply, nextSeq + 1,
-                    MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
+                        MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
                 aiRecord = recordRepository.save(aiRecord);
-                log.info("[{}] 💾 带文件的AI回复已保存 - recordId: {}, 内容长度: {}", 
+                log.info("[{}] 💾 带文件的AI回复已保存 - recordId: {}, 内容长度: {}",
                         getCurrentTimestamp(), aiRecord.getRid(), finalReply.length());
             } else {
                 log.warn("[{}] ⚠️ 带文件的AI回复为空或无效，将使用默认回复 - sid: {}", getCurrentTimestamp(), sid);
                 String defaultReply = aiReply.length() > 0 ? aiReply.toString() : "AI回复为空";
                 aiRecord = new Record(sid, uid, false, defaultReply, nextSeq + 1,
-                    MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
+                        MessageTypeConstant.LLM_GENERATION, LocalDateTime.now());
                 aiRecord = recordRepository.save(aiRecord);
             }
 
@@ -1473,125 +1325,12 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType) {
-        // 使用默认配置
-        return sendConfigMessage(uid, sid, agentType, null, null, null);
-    }
-
-    @Override
-    public SseEmitter sendConfigMessage(Integer uid, Integer sid, String agentType, String apiKey, String baseUrl, String model) {
-        // 创建SSE发射器，短超时即可因为不需要等待流式回复
-        SseEmitter emitter = new SseEmitter(10000L);
-
-        // 更新会话时间
-        updateSessionTime(uid, sid);
-
-        // 异步处理配置发送
-        CompletableFuture.runAsync(() -> {
-            processConfigMessage(emitter, uid, sid, agentType, apiKey, baseUrl, model);
-        });
-
-        // 设置超时和错误处理
-        emitter.onTimeout(() -> {
-            log.warn("配置消息SSE连接超时");
-            emitter.complete();
-        });
-
-        emitter.onError((throwable) -> {
-            log.error("配置消息SSE连接错误", throwable);
-            emitter.complete();
-        });
-
-        return emitter;
-    }
-
-    /**
-     * 处理配置消息发送（支持自定义配置，不等待流式回复）
-     */
-    private void processConfigMessage(SseEmitter emitter, Integer uid, Integer sid, String agentType, String customApiKey, String customBaseUrl, String customModel) {
-        String userInputUrl = "http://localhost:8000/api/v1/user/input";
-        int nextSeq = getNextSequence(sid);
-
-        try {
-            // 发送开始信号
-            sendMessageToFrontend(emitter, "start", "正在配置LLM参数...", null);
-
-            // 准备配置请求
-            var inputRequest = new java.util.HashMap<String, Object>();
-            inputRequest.put("session_id", sid.toString());
-            inputRequest.put("user_id", uid.toString());
-            inputRequest.put("input_text", "");
-            inputRequest.put("input_type", "config");
-            
-            // 添加metadata，包含agent_type和LLM配置
-            var metadata = new java.util.HashMap<String, Object>();
-            metadata.put("agent_type", agentType != null ? agentType : "orchestrator");
-            
-            var llmConfig = new java.util.HashMap<String, Object>();
-            // 使用自定义配置或默认配置
-            llmConfig.put("api_key", customApiKey != null ? customApiKey : openaiApiKey);
-            llmConfig.put("base_url", customBaseUrl != null ? customBaseUrl : openaiBaseUrl);
-            llmConfig.put("model", customModel != null ? customModel : openaiModel);
-            metadata.put("llm_config", llmConfig);
-            
-            // 添加其他配置参数
-            metadata.put("execution_model", executionModel);
-            metadata.put("temperature", temperature);
-            metadata.put("max_tokens", maxTokens);
-            
-            inputRequest.put("metadata", metadata);
-
-            // 保存配置消息到数据库
-            Record configRecord = new Record();
-            configRecord.setUid(uid);
-            configRecord.setSid(sid);
-            configRecord.setDirection(true); // 用户发起的配置
-            configRecord.setContent(String.format("配置LLM: %s (Agent: %s)", 
-                customModel != null ? customModel : openaiModel, 
-                agentType != null ? agentType : "orchestrator"));
-            configRecord.setSequence(nextSeq);
-            configRecord.setType(MessageTypeConstant.CONFIG);
-            configRecord.setCreateTime(LocalDateTime.now());
-            recordRepository.save(configRecord);
-
-            // 发送配置到LLM
-            var inputResponse = restTemplate.postForObject(userInputUrl, inputRequest, java.util.Map.class);
-            
-            if (inputResponse != null && "success".equals(inputResponse.get("status"))) {
-                // 配置成功
-                sendCompleteToFrontend(emitter, "LLM配置已更新", configRecord.getRid());
-                log.info("LLM配置发送成功 - uid: {}, sid: {}, model: {}", uid, sid, 
-                    customModel != null ? customModel : openaiModel);
-            } else {
-                // 配置失败
-                sendErrorToFrontend(emitter, "LLM配置更新失败");
-                log.error("LLM配置发送失败 - uid: {}, sid: {}, response: {}", uid, sid, inputResponse);
-            }
-
-        } catch (Exception e) {
-            log.error("发送配置消息失败", e);
-            sendErrorToFrontend(emitter, "配置失败: " + e.getMessage());
-        } finally {
-            // 对于会话级连接，不需要在这里关闭连接，由管理器统一管理
-            log.info("[{}] 🔄 配置消息处理完成 - sid: {} (连接由会话管理器管理)", getCurrentTimestamp(), sid);
-        }
-    }
-
-    /**
-     * 获取下一个序列号
-     */
-    private int getNextSequence(Integer sid) {
-        List<Record> records = recordRepository.findBySidOrderBySequenceDesc(sid);
-        return records.isEmpty() ? 1 : records.get(0).getSequence() + 1;
-    }
-
-    @Override
     public boolean sendMessageInput(Integer uid, Integer sid, String content, java.util.Map<String, Object> metadata, String inputType) {
-        log.info("[{}] 📨 发送非流式消息 - uid: {}, sid: {}, inputType: {}, metadata: {}", 
+        log.info("[{}] 📨 发送非流式消息 - uid: {}, sid: {}, inputType: {}, metadata: {}",
                 getCurrentTimestamp(), uid, sid, inputType, metadata);
-        
+
         String userInputUrl = "http://localhost:8000/api/v1/user/input";
-        
+
         try {
             // 更新会话时间，确保最新发送消息的会话显示在最上面
             updateSessionTime(uid, sid);
@@ -1602,48 +1341,47 @@ public class ChatServiceImpl implements ChatService {
             inputRequest.put("user_id", uid.toString());
             inputRequest.put("input_text", content != null ? content : "");
             inputRequest.put("input_type", inputType != null ? inputType : "question");
-            
-            // 添加metadata，默认包含agent_type
+
+            // 处理 metadata，对于 config 类型需要特殊处理
             var requestMetadata = new java.util.HashMap<String, Object>();
-            requestMetadata.put("agent_type", "orchestrator"); // 默认agent类型
-            
-            // 合并请求中的metadata
             if (metadata != null && !metadata.isEmpty()) {
                 requestMetadata.putAll(metadata);
                 log.info("[{}] 📋 合并请求metadata: {}", getCurrentTimestamp(), metadata);
-            }
-            
-            // 如果是config类型，添加LLM配置
-            if ("config".equals(inputType)) {
+
+                // 如果是config类型且metadata中没有llm_config，则使用默认配置填充
+                if ("config".equals(inputType) && !metadata.containsKey("llm_config")) {
+                    var llmConfig = new java.util.HashMap<String, Object>();
+                    llmConfig.put("api_key", openaiApiKey);
+                    llmConfig.put("base_url", openaiBaseUrl);
+                    llmConfig.put("model", openaiModel);
+                    requestMetadata.put("llm_config", llmConfig);
+                    log.info("[{}] 🔧 为config请求添加默认LLM配置", getCurrentTimestamp());
+                }
+            } else if ("config".equals(inputType)) {
+                // metadata为空但是config类型，添加默认配置
+                requestMetadata.put("agent_type", "orchestrator");
                 var llmConfig = new java.util.HashMap<String, Object>();
                 llmConfig.put("api_key", openaiApiKey);
                 llmConfig.put("base_url", openaiBaseUrl);
                 llmConfig.put("model", openaiModel);
                 requestMetadata.put("llm_config", llmConfig);
-                
-                // 添加其他配置参数
-                requestMetadata.put("execution_model", executionModel);
-                requestMetadata.put("temperature", temperature);
-                requestMetadata.put("max_tokens", maxTokens);
-                
-                log.info("[{}] 🔧 添加LLM配置到config请求", getCurrentTimestamp());
+                log.info("[{}] 🔧 为空metadata的config请求添加默认配置", getCurrentTimestamp());
             }
-            
             inputRequest.put("metadata", requestMetadata);
 
-            log.info("[{}] 🚀 发送非流式请求到大模型 - URL: {}, Request: {}", 
+            log.info("[{}] 🚀 发送非流式请求到大模型 - URL: {}, Request: {}",
                     getCurrentTimestamp(), userInputUrl, inputRequest);
 
             // 发送请求到大模型
             var inputResponse = restTemplate.postForObject(userInputUrl, inputRequest, java.util.Map.class);
-            
+
             if (inputResponse == null) {
                 log.error("[{}] ❌ 大模型响应为空", getCurrentTimestamp());
                 return false;
             }
-            
+
             log.info("[{}] ✅ 大模型响应: {}", getCurrentTimestamp(), inputResponse);
-            
+
             // 检查响应状态
             if ("success".equals(inputResponse.get("status"))) {
                 log.info("[{}] ✅ 非流式消息发送成功 - inputType: {}", getCurrentTimestamp(), inputType);
@@ -1652,9 +1390,9 @@ public class ChatServiceImpl implements ChatService {
                 log.error("[{}] ❌ 大模型返回错误状态: {}", getCurrentTimestamp(), inputResponse.get("status"));
                 return false;
             }
-            
+
         } catch (Exception e) {
-            log.error("[{}] ❌ 发送非流式消息失败 - uid: {}, sid: {}, inputType: {}", 
+            log.error("[{}] ❌ 发送非流式消息失败 - uid: {}, sid: {}, inputType: {}",
                     getCurrentTimestamp(), uid, sid, inputType, e);
             return false;
         }
